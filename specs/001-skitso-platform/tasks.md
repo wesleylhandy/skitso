@@ -65,7 +65,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - Text registry created for all five vibes with all UI labels
 - SVG logo definitions created for all five vibes
 - ThemeProvider applies data-theme attribute and switches text registry atomically
-- Theme switching completes in <1 second (including text and logo changes)
+- Theme switching completes in <100ms (including text and logo changes, per constitution Principle 5)
 
 **Blocks:** All user story phases
 
@@ -86,7 +86,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - [ ] T018a Update ThemeProvider to handle logo display and animations in src/components/vibes/theme-provider.tsx
 - [ ] T019 Create useVibe hook for accessing current vibe config (including text registry access) in src/lib/hooks/use-vibe.ts
 - [ ] T020 Integrate ThemeProvider into root layout in src/app/layout.tsx
-- [ ] T021 Test theme switching performance including text registry and logo changes (must complete in <1 second)
+- [ ] T021 Test theme switching performance including text registry and logo changes (must complete in <100ms per constitution Principle 5)
 
 ## Phase 3: User Story 1 - Director Selects VibeContext
 
@@ -114,7 +114,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - [ ] T028 [US1] Add keyboard navigation support to VibeSelector in src/components/vibes/vibe-selector.tsx
 - [ ] T029 [US1] Add screen reader support with ARIA labels in src/components/vibes/vibe-selector.tsx
 - [ ] T030 [US1] Add transition animation for vibe selection (500ms cross-dissolve) in src/components/vibes/vibe-selector.tsx
-- [ ] T031 [US1] Test vibe selection and visual transformation (<1 second requirement)
+- [ ] T031 [US1] Test vibe selection and visual transformation (<100ms requirement per constitution Principle 5)
 
 ## Phase 4: User Story 2 - Director Configures Session
 

@@ -249,7 +249,7 @@ yarn test
 
 1. Navigate to vibe selection page
 2. Select different vibes
-3. Verify instant visual transformation (<1 second)
+3. Verify instant visual transformation (<100ms per constitution Principle 5)
 4. Check that all UI elements adapt
 
 ### Test AI Generation

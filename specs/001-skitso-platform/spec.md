@@ -69,7 +69,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 
 **Success Criteria:**
 - User can complete vibe selection and configuration in under 2 minutes
-- Visual transformation occurs instantly (under 1 second) when vibe is selected
+- Visual transformation occurs instantly (within 100ms) when vibe is selected
 - Generated content matches the selected vibe's linguistic and aesthetic style
 - Session code (8-10 character alphanumeric) and shareable link are both available and work for participants
 
@@ -179,7 +179,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 
 **Acceptance Criteria:**
 - Five production styles are available: Viral Neon, Indie A24, Sitcom Studio, Brainrot Theater, Quiet Studio
-- Visual transformation (colors, fonts, layouts, animations) occurs within 1 second of selection
+- Visual transformation (colors, fonts, layouts, animations) occurs within 100ms of selection
 - All application screens reflect the selected vibe consistently
 - Textual labels (section titles, button text, form placeholders, messages) switch atomically with theme changes via centralized text registry per VibeContext
 - Linguistic elements (labels, buttons, messages) adapt to match vibe's tone
@@ -199,7 +199,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 **Acceptance Criteria:**
 - Director can input:
   - Theme/topic (free text, 10-200 characters)
-  - Tone preference (dropdown or tags: comedic, dramatic, satirical, etc.)
+  - Tone preference (dropdown or tags: comedic, dramatic, satirical, absurdist, suspenseful, romantic, action-packed, slice-of-life, or custom free text)
   - Number of participants (numeric input, 2-10 range)
   - Chaos level (slider or numeric input, 1-10 scale)
   - Optional: Character assignments or character preferences (Director can pre-define or override character assignments before skit generation)
@@ -342,6 +342,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 
 **Acceptance Criteria:**
 - Character Dossier is accessible from Casting Couch (via character card click or dedicated button)
+- Navigation flow: Clicking a character card in Casting Couch opens Character Dossier as a modal overlay (not a new page). Modal includes close button and backdrop click to return to Casting Couch. Navigation preserves Casting Couch state.
 - Character Dossier displays full character information:
   - Character name (vibe-appropriate)
   - Archetype label
@@ -390,7 +391,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 - Session state persists in browser storage
 - Users can refresh browser without losing session progress
 - Session data includes: VibeContext, configuration, cast, script, performance progress
-- Sessions expire after 24 hours of inactivity
+- Sessions expire after 24 hours from creation or last activity (whichever is later)
 - Disconnected users can rejoin using same session code (8-10 character alphanumeric) or shareable link
 - Director can end session early (transitions to Wrap Party)
 - Session cleanup occurs after Wrap Party completion or expiration
@@ -449,8 +450,8 @@ The application operates as a linear session flow: Vibe Selection → Director's
 ### NFR-1: Performance
 
 **Requirements:**
-- VibeContext visual transformation completes within 1 second
-- Script generation completes within 30 seconds for typical sessions (2-10 participants)
+- VibeContext visual transformation completes within 100ms
+- Script generation completes within 30 seconds for typical sessions (2-10 participants, 2-5 minute performance duration, 50-200 script lines)
 - Character image generation completes within 10 seconds per character
 - Multi-device synchronization maintains less than 500ms latency
 - Application loads initial screen within 2 seconds on standard mobile connection
@@ -458,7 +459,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 - Video chat connects all participants within 10 seconds
 
 **Success Criteria:**
-- 95% of vibe transformations complete within 1 second
+- 95% of vibe transformations complete within 100ms
 - 90% of script generations complete within 30 seconds
 - 99% of synchronization updates propagate within 500ms
 - Application receives performance score of 90+ on Core Web Vitals
@@ -567,7 +568,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
    - 90% of generated content matches selected VibeContext style (validated by human review)
 
 5. **System Performance**
-   - 95% of vibe transformations complete within 1 second
+   - 95% of vibe transformations complete within 100ms
    - 90% of script generations complete within 30 seconds
    - Application loads initial screen within 2 seconds on 4G connection
 

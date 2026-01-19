@@ -109,7 +109,7 @@ The platform supports role-based collaboration where a Director configures skit 
    - Session codes: 8-10 character alphanumeric with shareable links
    - Session state persists in localStorage until Wrap Party
    - Server maintains authoritative session state for multi-device sync
-   - Sessions expire after 24 hours of inactivity
+   - Sessions expire after 24 hours from creation or last activity (whichever is later)
 
 6. **Component Architecture: Server Components Default**
    - Server Components for static content and data fetching
@@ -258,7 +258,7 @@ export const activeParticipantsAtom = atom((get) =>
    - [ ] Implement logo animation system (glitch effects, pulsing, scanlines) with optional activation on theme selection/interaction
    - [ ] Create ThemeProvider component (applies data-theme attribute, switches text registry atomically)
    - [ ] Create `useVibe` hook for accessing current vibe config (includes text registry access)
-   - [ ] Test theme switching (<1 second transformation, including text and logo changes)
+   - [ ] Test theme switching (<100ms transformation, including text and logo changes, per constitution Principle 5)
 
 4. **Vibe Selection UI**
    - [ ] Create VibeSelector component (Server Component)
@@ -377,7 +377,7 @@ export const activeParticipantsAtom = atom((get) =>
 
 ## Acceptance Criteria
 
-- [ ] User can select from five vibes and see instant visual transformation (<1 second)
+- [ ] User can select from five vibes and see instant visual transformation (<100ms per constitution Principle 5)
 - [ ] Director can configure skit parameters and generate script/characters within 30 seconds
 - [ ] Session codes (8-10 chars alphanumeric) and shareable links work for participants
 - [ ] Actors join and immediately receive character assignments
@@ -435,8 +435,8 @@ export const activeParticipantsAtom = atom((get) =>
 ## Performance Considerations
 
 - **Initial Load:** <3 seconds on 3G connection
-- **Vibe Transformation:** <1 second visual delay
-- **Script Generation:** <30 seconds for typical sessions (2-10 participants)
+- **Vibe Transformation:** <100ms visual delay (per constitution Principle 5)
+- **Script Generation:** <30 seconds for typical sessions (2-10 participants, 2-5 minute performance duration, 50-200 script lines)
 - **Synchronization:** <500ms latency for state updates
 - **Teleprompter Scrolling:** 60fps smooth animation
 - **Bundle Size:** <200KB initial JavaScript
