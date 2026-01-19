@@ -1,115 +1,145 @@
-# Feature Specification: [FEATURE NAME]
+# Specification Template
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: User description: "$ARGUMENTS"
+## Constitution Compliance
 
-## User Scenarios & Testing *(mandatory)*
+This specification MUST comply with:
+- Principle 1: VibeContext as Single Source of Truth
+- Principle 2: Real-Time Synchronization
+- Principle 3: AI Generation Consistency
+- Principle 4: Progressive Enhancement Architecture
+- Principle 5: Dynamic Theming System
+- Principle 6: Type Safety and Modern React Patterns
+- Principle 7: Accessibility and Semantic HTML
+- Principle 8: Performance and Bundle Optimization
 
-<!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
--->
+## Feature Specification
 
-### User Story 1 - [Brief Title] (Priority: P1)
+**Feature Name:** [Name]
 
-[Describe this user journey in plain language]
+**Version:** [X.Y.Z]
 
-**Why this priority**: [Explain the value and why it has this priority level]
+**Last Updated:** [YYYY-MM-DD]
 
-**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by [specific action] and delivers [specific value]"]
+## Overview
 
-**Acceptance Scenarios**:
+[High-level description of the feature and its purpose within Skitso]
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 2 - [Brief Title] (Priority: P2)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 3 - [Brief Title] (Priority: P3)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-[Add more user stories as needed, each with an assigned priority]
-
-### Edge Cases
-
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right edge cases.
--->
-
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
-
-## Requirements *(mandatory)*
-
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
--->
+## Requirements
 
 ### Functional Requirements
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+1. **FR-1:** [Requirement]
+   - **VibeContext Dependency:** [How VibeContext affects this requirement]
+   - **Acceptance Criteria:** [Specific, testable criteria]
 
-*Example of marking unclear requirements:*
+2. **FR-2:** [Requirement]
+   - **VibeContext Dependency:** [How VibeContext affects this requirement]
+   - **Acceptance Criteria:** [Specific, testable criteria]
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+### Non-Functional Requirements
 
-### Key Entities *(include if feature involves data)*
+1. **NFR-1: Performance**
+   - [Performance target, e.g., "Theme swap <100ms"]
 
-- **[Entity 1]**: [What it represents, key attributes without implementation]
-- **[Entity 2]**: [What it represents, relationships to other entities]
+2. **NFR-2: Accessibility**
+   - [WCAG 2.1 AA compliance requirements]
 
-## Success Criteria *(mandatory)*
+3. **NFR-3: Type Safety**
+   - [TypeScript requirements]
 
-<!--
-  ACTION REQUIRED: Define measurable success criteria.
-  These must be technology-agnostic and measurable.
--->
+## Technical Design
 
-### Measurable Outcomes
+### Component Structure
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+```
+[Component hierarchy diagram or description]
+```
+
+### State Management
+
+**Jotai Atoms:**
+- `[atomName]`: [Purpose and type]
+
+**State Flow:**
+[Description of how state flows through the feature]
+
+### API Integration
+
+**OpenAI Endpoints:**
+- [Endpoint 1]: [Purpose, VibeContext usage]
+
+**Request/Response Types:**
+```typescript
+// Type definitions
+```
+
+### Theming
+
+**CSS Variables:**
+- `--variable-name`: [Purpose, vibe-specific values]
+
+**Theme Selectors:**
+```css
+[data-theme='VIBE_NAME'] {
+  /* Theme-specific overrides */
+}
+```
+
+### Type Definitions
+
+```typescript
+// Complete type definitions for this feature
+```
+
+## User Experience
+
+### User Flow
+
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+### Visual Design
+
+[Reference to wireframes or design files in docs/images/]
+
+### Error Handling
+
+- [Error scenario 1]: [Handling approach]
+- [Error scenario 2]: [Handling approach]
+
+## Testing Strategy
+
+### Unit Tests
+- [Test case 1]
+- [Test case 2]
+
+### Integration Tests
+- [Test case 1]
+- [Test case 2]
+
+### Accessibility Tests
+- [Test case 1]
+- [Test case 2]
+
+## Implementation Checklist
+
+- [ ] Type definitions created
+- [ ] Jotai atoms defined
+- [ ] Components implemented
+- [ ] VibeContext integration verified
+- [ ] Theming applied
+- [ ] Accessibility requirements met
+- [ ] Performance targets validated
+- [ ] Tests written
+- [ ] Documentation updated
+
+## Dependencies
+
+- [Dependency 1]
+- [Dependency 2]
+
+## Open Questions
+
+- [Question 1]
+- [Question 2]
