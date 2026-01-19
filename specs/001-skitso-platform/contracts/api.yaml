@@ -1,0 +1,587 @@
+openapi: 3.0.3
+info:
+  title: Skitso Platform API
+  version: 1.0.0
+  description: API for Skitso collaborative performance platform
+
+paths:
+  /api/openai/characters:
+    post:
+      summary: Generate characters for a session
+      description: Generates character archetypes matching the VibeContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vibeContext
+                - participantCount
+              properties:
+                vibeContext:
+                  type: string
+                  enum:
+                    [
+                      VIRAL_NEON,
+                      INDIE_A24,
+                      SITCOM_STUDIO,
+                      BRAINROT_THEATER,
+                      QUIET_STUDIO,
+                    ]
+                participantCount:
+                  type: integer
+                  minimum: 2
+                  maximum: 10
+                directorDefinedCharacters:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Character"
+      responses:
+        "200":
+          description: Characters generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  characters:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Character"
+        "400":
+          description: Invalid request
+        "429":
+          description: Rate limit exceeded
+        "500":
+          description: AI generation failed
+
+  /api/openai/script:
+    post:
+      summary: Generate script for a session
+      description: Generates script with dialogue, stage directions, and sound cues matching VibeContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vibeContext
+                - cast
+                - theme
+                - tone
+                - chaosLevel
+              properties:
+                vibeContext:
+                  type: string
+                  enum:
+                    [
+                      VIRAL_NEON,
+                      INDIE_A24,
+                      SITCOM_STUDIO,
+                      BRAINROT_THEATER,
+                      QUIET_STUDIO,
+                    ]
+                cast:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Character"
+                theme:
+                  type: string
+                  minLength: 10
+                  maxLength: 200
+                tone:
+                  type: string
+                  enum:
+                    [comedic, dramatic, satirical, absurd, serious, romantic]
+                chaosLevel:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                slangRegistry:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Script generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Script"
+        "400":
+          description: Invalid request
+        "429":
+          description: Rate limit exceeded
+        "500":
+          description: AI generation failed
+
+  /api/openai/character-image:
+    post:
+      summary: Generate character image
+      description: Generates character visual representation using gpt-image-1.5
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - characterDescription
+                - vibeContext
+              properties:
+                characterDescription:
+                  type: string
+                vibeContext:
+                  type: string
+                  enum:
+                    [
+                      VIRAL_NEON,
+                      INDIE_A24,
+                      SITCOM_STUDIO,
+                      BRAINROT_THEATER,
+                      QUIET_STUDIO,
+                    ]
+      responses:
+        "200":
+          description: Image generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imageUrl:
+                    type: string
+                    format: uri
+                  imagePrompt:
+                    type: string
+        "400":
+          description: Invalid request
+        "429":
+          description: Rate limit exceeded
+        "500":
+          description: Image generation failed
+
+  /api/sessions:
+    post:
+      summary: Create a new session
+      description: Creates a new performance session with configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionConfiguration"
+      responses:
+        "201":
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Invalid configuration
+
+  /api/sessions/{sessionId}:
+    get:
+      summary: Get session details
+      description: Retrieves session state and configuration
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9]{8,10}$"
+      responses:
+        "200":
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          description: Session not found
+
+  /api/sessions/{sessionId}/join:
+    post:
+      summary: Join a session
+      description: Actor joins an existing session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+      responses:
+        "200":
+          description: Successfully joined session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Participant"
+        "404":
+          description: Session not found
+        "409":
+          description: Session full or invalid
+
+  /api/sessions/{sessionId}/sync:
+    get:
+      summary: Get session state for synchronization
+      description: Returns current session state for multi-device sync
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionState"
+        "404":
+          description: Session not found
+
+    post:
+      summary: Update session state
+      description: Updates session state (script advancement, etc.)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentLineIndex:
+                  type: integer
+                performanceProgress:
+                  $ref: "#/components/schemas/PerformanceProgress"
+      responses:
+        "200":
+          description: State updated successfully
+        "400":
+          description: Invalid state update
+        "404":
+          description: Session not found
+
+components:
+  schemas:
+    VibeContext:
+      type: string
+      enum:
+        [VIRAL_NEON, INDIE_A24, SITCOM_STUDIO, BRAINROT_THEATER, QUIET_STUDIO]
+
+    Session:
+      type: object
+      required:
+        - id
+        - vibeContext
+        - directorId
+        - configuration
+        - status
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9]{8,10}$"
+        shareableLink:
+          type: string
+          format: uri
+        vibeContext:
+          $ref: "#/components/schemas/VibeContext"
+        directorId:
+          type: string
+        configuration:
+          $ref: "#/components/schemas/SessionConfiguration"
+        status:
+          type: string
+          enum: [configuring, casting, performing, completed, expired]
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
+        cast:
+          type: array
+          items:
+            $ref: "#/components/schemas/Participant"
+        script:
+          $ref: "#/components/schemas/Script"
+          nullable: true
+        performanceProgress:
+          $ref: "#/components/schemas/PerformanceProgress"
+
+    SessionConfiguration:
+      type: object
+      required:
+        - theme
+        - tone
+        - participantCount
+        - chaosLevel
+      properties:
+        theme:
+          type: string
+          minLength: 10
+          maxLength: 200
+        tone:
+          type: string
+          enum: [comedic, dramatic, satirical, absurd, serious, romantic]
+        participantCount:
+          type: integer
+          minimum: 2
+          maximum: 10
+        chaosLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        directorDefinedCharacters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Character"
+
+    Participant:
+      type: object
+      required:
+        - id
+        - sessionId
+        - role
+        - name
+        - connectionStatus
+        - joinedAt
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        role:
+          type: string
+          enum: [director, actor]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        characterAssignment:
+          $ref: "#/components/schemas/Character"
+          nullable: true
+        connectionStatus:
+          type: string
+          enum: [connected, disconnected, reconnecting]
+        joinedAt:
+          type: integer
+
+    Character:
+      type: object
+      required:
+        - id
+        - sessionId
+        - name
+        - archetypeLabel
+        - personalityTraits
+        - hiddenMotivation
+        - visualRepresentation
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        participantId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        archetypeLabel:
+          type: string
+        personalityTraits:
+          type: array
+          items:
+            type: string
+        hiddenMotivation:
+          type: string
+        visualRepresentation:
+          type: object
+          properties:
+            imageUrl:
+              type: string
+              format: uri
+            imagePrompt:
+              type: string
+        dialogueLines:
+          type: array
+          items:
+            type: integer
+
+    Script:
+      type: object
+      required:
+        - id
+        - sessionId
+        - vibeContext
+        - dialogueLines
+        - generatedAt
+        - version
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        vibeContext:
+          $ref: "#/components/schemas/VibeContext"
+        dialogueLines:
+          type: array
+          items:
+            $ref: "#/components/schemas/DialogueLine"
+        stageDirections:
+          type: array
+          items:
+            $ref: "#/components/schemas/StageDirection"
+        soundCues:
+          type: array
+          items:
+            $ref: "#/components/schemas/SoundCue"
+        timingMarkers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimingMarker"
+        generatedAt:
+          type: integer
+        version:
+          type: integer
+
+    DialogueLine:
+      type: object
+      required:
+        - id
+        - characterId
+        - text
+        - timing
+      properties:
+        id:
+          type: integer
+        characterId:
+          type: string
+        text:
+          type: string
+        timing:
+          type: object
+          properties:
+            estimatedDuration:
+              type: number
+            pauseAfter:
+              type: number
+
+    StageDirection:
+      type: object
+      required:
+        - id
+        - text
+        - timing
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        timing:
+          type: object
+          properties:
+            estimatedDuration:
+              type: number
+
+    SoundCue:
+      type: object
+      required:
+        - id
+        - soundName
+        - timing
+      properties:
+        id:
+          type: integer
+        soundName:
+          type: string
+        timing:
+          type: object
+          properties:
+            startOffset:
+              type: number
+            duration:
+              type: number
+
+    TimingMarker:
+      type: object
+      required:
+        - lineIndex
+        - pauseDuration
+        - pacing
+      properties:
+        lineIndex:
+          type: integer
+        pauseDuration:
+          type: number
+        pacing:
+          type: string
+          enum: [fast, normal, slow]
+
+    PerformanceProgress:
+      type: object
+      required:
+        - currentLineIndex
+        - currentScene
+        - completedLines
+      properties:
+        currentLineIndex:
+          type: integer
+        currentScene:
+          type: integer
+        startedAt:
+          type: integer
+          nullable: true
+        pausedAt:
+          type: integer
+          nullable: true
+        completedLines:
+          type: array
+          items:
+            type: integer
+        advancementControl:
+          type: object
+          properties:
+            lastAdvancedBy:
+              type: string
+            lastAdvancedAt:
+              type: integer
+            directorOverride:
+              type: boolean
+
+    SessionState:
+      type: object
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Participant"
+        currentVibeContext:
+          $ref: "#/components/schemas/VibeContext"
