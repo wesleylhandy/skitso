@@ -1,36 +1,35 @@
 /**
- * Socket.io Client Tests
+ * PartyKit Client Tests
  * 
- * Tests for Socket.io client initialization and event handling.
+ * Tests for PartyKit client initialization and event handling.
+ * Migrated from Socket.io to PartyKit.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Socket as SocketIOClient } from 'socket.io-client';
 
-// Mock socket.io-client
-vi.mock('socket.io-client', () => {
-  const mockSocket = {
+// Mock PartyKit client
+vi.mock('partysocket', () => {
+  const mockPartySocket = {
     id: 'test-client-id',
-    connected: true,
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    emit: vi.fn(),
-    on: vi.fn(),
-    off: vi.fn(),
-    once: vi.fn(),
+    room: 'test-room',
+    readyState: WebSocket.OPEN,
+    send: vi.fn(),
+    close: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   };
 
   return {
-    io: vi.fn(() => mockSocket),
+    default: vi.fn(() => mockPartySocket),
   };
 });
 
-describe('Socket.io Client', () => {
+describe('PartyKit Client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should initialize Socket.io client with server URL', () => {
+  it('should initialize PartyKit client with room', () => {
     // This test will be implemented once we create the client module
     expect(true).toBe(true);
   });

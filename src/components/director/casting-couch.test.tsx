@@ -6,20 +6,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { CastingCouch } from './casting-couch';
 
-// Mock Socket.io client
-vi.mock('@/src/lib/socket/client', () => ({
-  initializeSocketClient: vi.fn(),
-  getSocketClient: vi.fn(() => ({
-    on: vi.fn(),
-    off: vi.fn(),
-    emit: vi.fn(),
-    connected: true,
+// Mock PartyKit client
+vi.mock('@/src/lib/partykit/client', () => ({
+  initializePartyKitClient: vi.fn(),
+  getPartyKitClient: vi.fn(() => ({
+    readyState: WebSocket.OPEN,
+    room: 'test-room',
+    send: vi.fn(),
+    close: vi.fn(),
   })),
-  isSocketConnected: vi.fn(() => true),
+  isPartyKitConnected: vi.fn(() => true),
   joinSession: vi.fn(),
   onVibeContextChange: vi.fn(() => () => {}),
   onScriptUpdate: vi.fn(() => () => {}),
   onPerformanceProgress: vi.fn(() => () => {}),
+  getConnectionStatus: vi.fn(() => 'connected'),
 }));
 
 describe('CastingCouch', () => {

@@ -15,12 +15,13 @@ import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { participantAtom } from '@/src/state/atoms/participant-atom';
 import { performanceProgressAtom, type PerformanceProgress } from '@/src/state/atoms/performance-atom';
 import { AdvanceControl } from './advance-control';
+import { TimingIndicator } from './timing-indicator';
 import { flattenScriptLines, getUpcomingLines } from './script-lines';
 import {
-  initializeSocketClient,
+  initializePartyKitClient,
   onPerformanceProgress,
   advancePerformance,
-} from '@/src/lib/socket/client';
+} from '@/src/lib/partykit/client';
 
 interface TeleprompterProps {
   sessionCode: string;
@@ -54,9 +55,11 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     [scriptLines, progress.currentLineIndex]
   );
 
-  // Initialize socket and listen for progress updates
+  // Initialize PartyKit and listen for progress updates
   useEffect(() => {
-    initializeSocketClient();
+    if (!sessionCode) return;
+    
+    initializePartyKitClient(sessionCode);
     const unsubscribe = onPerformanceProgress((data) => {
       if (data.sessionId === sessionCode) {
         setProgress((prev) => ({
@@ -216,12 +219,23 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--color-bg)' }}>
       {/* Header */}
       <div className="p-4 border-b" style={{ borderColor: 'var(--color-primary)' }}>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
-          {script.title}
-        </h1>
-        <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
-          Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
-        </p>
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+              {script.title}
+            </h1>
+            <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
+              Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
+            </p>
+          </div>
+          {/* Timing Indicator */}
+          <div className="shrink-0 min-w-[200px]">
+            <TimingIndicator 
+              estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
+              isPaused={isPaused}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Script Display */}
@@ -244,7 +258,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
               <div
                 key={line.index}
                 ref={isCurrent ? currentLineRef : null}
-                className={`p-4 rounded transition-all ${
+                className={`p-4 rounded transition-all relative ${
                   isCurrent
                     ? 'ring-2 scale-105'
                     : isCompleted
@@ -261,6 +275,26 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                   borderStyle: 'solid',
                 }}
               >
+                {/* Visual timing cue - pulsing indicator for current line */}
+                {isCurrent && !isPaused && (
+                  <div 
+                    className="absolute top-0 left-0 h-1 rounded-t"
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'var(--color-accent)',
+                      animation: 'pulse 2s ease-in-out infinite',
+                    }}
+                  />
+                )}
+                {/* Paused indicator */}
+                {isCurrent && isPaused && (
+                  <div 
+                    className="absolute top-2 right-2 text-xs font-semibold opacity-75"
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    ⏸
+                  </div>
+                )}
                 {line.type === 'dialogue' && (
                   <div>
                     <div

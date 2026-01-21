@@ -75,12 +75,10 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     }
   };
 
-  if (!script) {
-    return null;
-  }
-
   // Group lines by scene for better readability
   const scenesWithLines = useMemo(() => {
+    if (!script) return [];
+    
     const grouped: Array<{ sceneIndex: number; title: string; lines: typeof scriptLines }> = [];
     let currentScene: typeof grouped[0] | null = null;
 
@@ -97,7 +95,7 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     });
 
     return grouped;
-  }, [scriptLines]);
+  }, [scriptLines, script]);
 
   // Add backdrop styling and scrollbar styling (only once)
   useEffect(() => {
@@ -128,6 +126,10 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     `;
     document.head.appendChild(style);
   }, []);
+
+  if (!script) {
+    return null;
+  }
 
   return (
     <dialog

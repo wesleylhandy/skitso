@@ -40,7 +40,7 @@ describe('SessionJoinPage', () => {
 
     render(
       <Provider>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 
@@ -64,7 +64,7 @@ describe('SessionJoinPage', () => {
 
     render(
       <Provider>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 
@@ -90,7 +90,7 @@ describe('SessionJoinPage', () => {
 
     render(
       <Provider>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 
@@ -119,7 +119,7 @@ describe('SessionJoinPage', () => {
 
     render(
       <Provider store={store}>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 
@@ -153,7 +153,7 @@ describe('SessionJoinPage', () => {
     
     render(
       <Provider store={store}>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 
@@ -185,7 +185,7 @@ describe('SessionJoinPage', () => {
 
     render(
       <Provider>
-        <SessionJoinPage params={{ sessionCode: 'TEST1234' }} />
+        <SessionJoinPage params={Promise.resolve({ sessionCode: 'TEST1234' })} />
       </Provider>
     );
 

@@ -16,7 +16,7 @@ import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { participantAtom } from '@/src/state/atoms/participant-atom';
 import { performanceProgressAtom } from '@/src/state/atoms/performance-atom';
 import { wrapPartyDataAtom } from '@/src/state/atoms/wrap-party-atom';
-import { leaveSession } from '@/src/lib/socket/client';
+import { leaveSession } from '@/src/lib/partykit/client';
 
 interface ResetSessionButtonProps {
   variant?: 'primary' | 'secondary' | 'danger';
@@ -45,9 +45,14 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
       return;
     }
 
-    // Leave socket session if connected
+    // Leave PartyKit session if connected
     try {
-      leaveSession();
+      // Dynamic import to avoid issues if module not available
+      import('@/src/lib/partykit/client').then((partykitClient) => {
+        partykitClient.disconnectPartyKit();
+      }).catch(() => {
+        // Ignore errors if module not available
+      });
     } catch (error) {
       // Ignore errors - might not be connected
       console.warn('Error leaving session:', error);

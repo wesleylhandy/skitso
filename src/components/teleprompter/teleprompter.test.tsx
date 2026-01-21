@@ -17,7 +17,7 @@ import type { Script } from '@/src/state/types/session';
 import type { Participant } from '@/src/state/types/session';
 import type { PerformanceProgress } from '@/src/state/atoms/performance-atom';
 
-// Mock Socket.io client
+// Mock PartyKit client
 const mockUnsubscribe = vi.fn();
 let storedCallback: ((data: {
   sessionId: string;
@@ -31,8 +31,8 @@ let storedCallback: ((data: {
   timestamp: number;
 }) => void) | null = null;
 
-vi.mock('@/src/lib/socket/client', () => ({
-  initializeSocketClient: vi.fn(),
+vi.mock('@/src/lib/partykit/client', () => ({
+  initializePartyKitClient: vi.fn(),
   onPerformanceProgress: vi.fn((callback: (data: {
     sessionId: string;
     progress: {
@@ -48,6 +48,7 @@ vi.mock('@/src/lib/socket/client', () => ({
     return mockUnsubscribe;
   }),
   advancePerformance: vi.fn(),
+  getConnectionStatus: vi.fn(() => 'connected'),
 }));
 
 // Mock useVibe hook
@@ -235,7 +236,7 @@ describe('Teleprompter Component', () => {
         completedLines: [0],
       };
 
-      // Trigger the callback that would be called by socket.io
+      // Trigger the callback that would be called by PartyKit
       if (storedCallback) {
         storedCallback({
           sessionId: TEST_SESSION_CODE,
@@ -289,7 +290,7 @@ describe('Teleprompter Component', () => {
     });
 
     it('should emit advancement event when user advances script', async () => {
-      const { advancePerformance } = await import('@/src/lib/socket/client');
+      const { advancePerformance } = await import('@/src/lib/partykit/client');
 
       render(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
 
@@ -369,7 +370,7 @@ describe('Teleprompter Component', () => {
       // Click resume button - this should call handleResume which updates the atom
       const resumeButton = screen.getByTestId('resume-button');
       
-      const { advancePerformance } = await import('@/src/lib/socket/client');
+      const { advancePerformance } = await import('@/src/lib/partykit/client');
       vi.clearAllMocks(); // Clear any previous calls
       
       fireEvent.click(resumeButton);

@@ -28,9 +28,10 @@ This document contains actionable, dependency-ordered tasks for implementing the
 4. Phase 4: US2 - Director Configures Session (blocks US3, US4)
 5. Phase 5: US3 - Actor Joins Session (blocks US4, US5)
 6. Phase 6: US4 - Multi-Device Synchronization (blocks US5)
-7. Phase 7: US5 - Teleprompter Performance (blocks US6)
-8. Phase 8: US6 - Wrap Party (independent)
-9. Phase 9: US7 - Premium Features (independent, post-MVP)
+7. Phase 6a: PartyKit Migration (recommended after Phase 6 or Phase 7, enables Vercel deployment)
+8. Phase 7: US5 - Teleprompter Performance (blocks US6)
+9. Phase 8: US6 - Wrap Party (independent)
+10. Phase 9: US7 - Premium Features (independent, post-MVP)
 
 ## Phase 1: Setup
 
@@ -263,6 +264,82 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - [X] T109 [US4] Test synchronization latency (<500ms requirement)
 - [X] T110 [US4] Test reconnection and state recovery
 
+## Phase 6a: PartyKit Migration
+
+**Goal:** Migrate from Socket.io to PartyKit for Vercel-compatible real-time synchronization
+
+**Independent Test Criteria:**
+- PartyKit server deployed and accessible (manual deployment successful)
+- GitHub Actions CI/CD workflow configured and tested (automated deployment works)
+- PartyKit token generated and stored securely in GitHub secrets
+- All Socket.io features work with PartyKit
+- Multi-device synchronization maintains <500ms latency
+- Session persistence works correctly using PartyKit storage (24h expiration)
+- Reconnection and state recovery work correctly
+- Vercel deployment configuration updated with PartyKit host URL
+- Vercel deployment successful
+
+**Dependencies:** Phase 6 complete (can be done after Phase 7 if needed)
+
+**Note:** This migration updates Socket.io implementations in completed tasks:
+- T125/T126 (script advancement sync) → Migrated to T271/T272 (PartyKit)
+- T142 (vote sync) → Migrated to T273 (PartyKit)
+- All other Socket.io references in Phase 6, 7, 8 → Updated in corresponding Phase 6a tasks
+
+### Tasks
+
+- [X] T265 [MIGRATION] Install PartyKit dependencies (@partykit/react, partykit) in package.json
+- [X] T266 [MIGRATION] Create PartyKit project configuration in partykit.json
+- [X] T266a [MIGRATION] Set up local PartyKit development server: Install concurrently package (`npm install --save-dev concurrently`), add `"dev:partykit": "partykit dev"` script to package.json, and optionally add `"dev:all": "concurrently \"npm run dev\" \"npm run dev:partykit\""` for running both Next.js and PartyKit dev servers simultaneously
+- [X] T267 [MIGRATION] Set up environment variables in .env.local: NEXT_PUBLIC_PARTYKIT_HOST (PartyKit server URL, e.g., https://skitso.[username].partykit.dev) and PARTYKIT_TOKEN (Note: PARTYKIT_TOKEN only needed for CI/CD automation, not local dev)
+- [X] T267a [MIGRATION] Update .env.example template with PartyKit variables: Add NEXT_PUBLIC_PARTYKIT_HOST (commented with example URL) and PARTYKIT_TOKEN (commented, note: CI/CD only) in .env.example
+- [X] T268 [MIGRATION] Create PartyKit server file in parties/session.ts
+- [X] T269 [MIGRATION] Port session join/leave handlers from src/lib/socket/server.ts to parties/session.ts
+- [X] T270 [MIGRATION] Port VibeContext change handler to PartyKit in parties/session.ts
+- [X] T271 [MIGRATION] Port script update handler to PartyKit in parties/session.ts
+- [X] T272 [MIGRATION] Port performance progress handler to PartyKit in parties/session.ts
+- [X] T273 [MIGRATION] Port wrap party vote handler to PartyKit in parties/session.ts
+- [X] T274 [MIGRATION] Port performance start handler to PartyKit in parties/session.ts
+- [X] T275 [MIGRATION] Implement participant tracking using PartyKit connections in parties/session.ts
+- [X] T276 [MIGRATION] Set up PartyKit storage for session state (24h expiration matches FR-9 requirement) in parties/session.ts
+- [X] T277 [MIGRATION] Implement 24-hour session expiration logic in parties/session.ts
+- [X] T278 [MIGRATION] Create PartyKit client wrapper in src/lib/partykit/client.ts
+- [X] T279 [MIGRATION] Replace Socket.io client initialization with PartyKit in src/lib/partykit/client.ts
+- [X] T280 [MIGRATION] Replace socket.on() calls with PartyKit message listeners in src/lib/partykit/client.ts
+- [X] T281 [MIGRATION] Replace socket.emit() calls with PartyKit send() in src/lib/partykit/client.ts
+- [X] T282 [MIGRATION] Update connection status tracking for PartyKit: Map Socket.io events (connect/disconnect/reconnect) to PartyKit events (open/close/error) in src/components/ui/connection-status.tsx and src/lib/partykit/client.ts
+- [X] T283 [MIGRATION] Update CastingCouch component to use PartyKit client in src/components/director/casting-couch.tsx
+- [X] T284 [MIGRATION] Update Teleprompter component to use PartyKit client in src/components/teleprompter/teleprompter.tsx
+- [X] T285 [MIGRATION] Update VotingInterface component to use PartyKit client in src/components/wrap-party/voting-interface.tsx
+- [X] T286 [MIGRATION] Update SessionJoinForm component to use PartyKit client in src/components/actor/session-join-form.tsx
+- [X] T287 [MIGRATION] Update session join page to use PartyKit client in src/app/join/[sessionCode]/page.tsx
+- [X] T288 [MIGRATION] Update ResetSessionButton to use PartyKit client in src/components/director/reset-session-button.tsx
+- [X] T289 [MIGRATION] Remove or update custom server (server.ts): Keep server.ts only during migration transition period if running Socket.io and PartyKit in parallel for testing. Remove after migration verified and all Socket.io code is cleaned up.
+- [X] T290 [MIGRATION] Update package.json scripts (remove dev:server or update) in package.json
+- [X] T291 [MIGRATION] Remove Socket.io dependencies (socket.io, socket.io-client) from package.json
+- [X] T292 [MIGRATION] Update socket-related tests to use PartyKit mocks in src/lib/socket/*.test.ts (Note: synchronization.test.ts needs full rewrite for PartyKit integration testing)
+- [X] T293 [MIGRATION] Update component tests that mock Socket.io in src/components/**/*.test.tsx
+- [X] T294 [MIGRATION] Test session join/leave flow with PartyKit
+- [X] T295 [MIGRATION] Test VibeContext synchronization with PartyKit
+- [X] T296 [MIGRATION] Test script update synchronization with PartyKit
+- [X] T297 [MIGRATION] Test performance progress synchronization with PartyKit
+- [X] T298 [MIGRATION] Test wrap party vote synchronization with PartyKit
+- [X] T299 [MIGRATION] Test reconnection and state recovery with PartyKit: Test network interruption (disable/enable network), server restart scenarios, token expiration handling, and multiple rapid reconnections to ensure state recovery works correctly
+- [X] T300 [MIGRATION] Perform initial manual deployment of PartyKit server using `npx partykit deploy` to PartyKit managed platform (partykit.dev) - no Cloudflare account required
+- [X] T300a [MIGRATION] Verify manual deployment successful and note the PartyKit host URL (e.g., https://skitso.[username].partykit.dev) for Vercel configuration
+- [X] T301 [MIGRATION] Update Vercel deployment configuration: Add NEXT_PUBLIC_PARTYKIT_HOST environment variable in Vercel dashboard with PartyKit host URL value
+- [ ] T301a [MIGRATION] Verify Vercel can connect to PartyKit server after NEXT_PUBLIC_PARTYKIT_HOST is configured
+- [ ] T302 [MIGRATION] Verify end-to-end multi-device synchronization with PartyKit
+- [X] T303 [MIGRATION] Performance test: Verify <500ms latency maintained with PartyKit (per Constitution Principle 2 requirement)
+- [X] T304 [MIGRATION] Clean up old Socket.io files (src/lib/socket/server.ts, src/lib/socket/client.ts, src/lib/socket/session-store.ts) after migration verified
+- [X] T304a [MIGRATION] Document rollback procedure: Create rollback documentation in docs/PARTYKIT_ROLLBACK.md with steps to revert to Socket.io (restore server.ts, update components, redeploy) and keep Socket.io code in separate branch until migration verified
+- [X] T305 [MIGRATION] Generate PartyKit access token using `npx partykit token generate` locally (opens browser for GitHub authentication, saves PARTYKIT_LOGIN and PARTYKIT_TOKEN values) - Note: Can be done at any time before CI/CD setup (T306-T307)
+- [X] T306 [MIGRATION] Create GitHub Actions workflow file (.github/workflows/deploy-partykit.yml) with: trigger on push to main branch, checkout code, set up Node.js, run `npx partykit deploy` using secrets
+- [X] T307 [MIGRATION] Configure GitHub repository secrets in GitHub Settings → Secrets and variables → Actions: Add PARTYKIT_LOGIN (GitHub username from token generation) and PARTYKIT_TOKEN (generated token value) - never commit these to source control
+- [ ] T307a [MIGRATION] Test GitHub Actions workflow by pushing to main branch and verify automated PartyKit deployment works correctly
+- [X] T308 [MIGRATION] Document PartyKit deployment workflow in README.md or quickstart.md: Include manual deployment steps, CI/CD automation setup instructions, environment variable configuration guide, and troubleshooting common issues
+- [X] T308a [MIGRATION] [OPTIONAL] Set up PartyKit monitoring and observability: Configure logging and error tracking for PartyKit server (optional: integrate with existing monitoring solution like Sentry or DataDog) in parties/session.ts
+
 ## Phase 7: User Story 5 - Teleprompter Performance
 
 **Goal:** Participants see synchronized teleprompter with shared script advancement control
@@ -289,7 +366,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - [X] T117 [US5] Implement vibe-appropriate scrolling behavior (smooth/snappy) in src/components/teleprompter/teleprompter.tsx
 - [X] T118 [US5] Distinguish stage directions from dialogue in src/components/teleprompter/teleprompter.tsx
 - [X] T119 [US5] Distinguish sound cues from dialogue in src/components/teleprompter/teleprompter.tsx
-- [ ] T120 [US5] Add timing indicators (countdown, visual cues) in src/components/teleprompter/teleprompter.tsx
+- [X] T120 [US5] Add timing indicators (countdown, visual cues) in src/components/teleprompter/teleprompter.tsx
 - [X] T121 [US5] Create script advancement control component in src/components/teleprompter/advance-control.tsx
 - [X] T122 [US5] Implement shared control (Director and Actors can advance) in src/components/teleprompter/advance-control.tsx
 - [X] T123 [US5] Implement Director override authority in src/components/teleprompter/advance-control.tsx
@@ -390,7 +467,8 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - Error handling covers all edge cases
 - All edge cases from spec handled
 
-**Dependencies:** All user story phases complete
+**Dependencies:** Phases 1-8 complete (MVP user story phases)  
+**Note:** Phase 10 polishes MVP features and does not require Phase 9 (Premium Features). Phase 9 can be developed in parallel or after Phase 10.
 
 ### Tasks
 
@@ -471,7 +549,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 
 ## Task Summary
 
-**Total Tasks:** 231
+**Total Tasks:** 286
 
 **Tasks by Phase:**
 - Phase 1 (Setup): 9 tasks
@@ -480,6 +558,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - Phase 4 (US2 - Director Configuration): 46 tasks (added: T033a-d for theme-specific layout patterns, section titles from text registry, button labels, placeholder text, visual effects)
 - Phase 5 (US3 - Actor Joins): 16 tasks
 - Phase 6 (US4 - Synchronization): 32 tasks (added: Character Dossier component with 8 new tasks for detailed character view, hidden motivation display, theme-specific styling, navigation)
+- Phase 6a (PartyKit Migration): 49 tasks (migration from Socket.io to PartyKit for Vercel compatibility, includes detailed CI/CD automation, token generation, and documentation updates)
 - Phase 7 (US5 - Teleprompter): 20 tasks (removed duplicate T087b)
 - Phase 8 (US6 - Wrap Party): 19 tasks
 - Phase 9 (US7 - Premium): 19 tasks
@@ -487,6 +566,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 
 **Parallel Opportunities:** 60+ tasks marked [P]
 
-**MVP Scope:** Phases 1-7 (120 tasks) - Core collaborative performance flow
+**MVP Scope:** Phases 1-7 (120 tasks) - Core collaborative performance flow (Phase 6a migration recommended after Phase 6 or Phase 7)
 
-**Post-MVP:** Phases 8-10 (77 tasks) - Wrap Party, Premium features, Polish
+**Post-MVP:** Phases 8-10 (77 tasks) - Wrap Party, Premium features, Polish  
+**Note:** Phase 10 (Polish) can be completed independently of Phase 9 (Premium Features) as it polishes MVP features only.

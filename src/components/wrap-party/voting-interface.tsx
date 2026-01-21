@@ -15,10 +15,10 @@ import { participantAtom } from '@/src/state/atoms/participant-atom';
 import { sessionCodeAtom } from '@/src/state/atoms/session-atom';
 import { castAtom } from '@/src/state/atoms/cast-atom';
 import {
-  initializeSocketClient,
+  initializePartyKitClient,
   onWrapPartyVote,
   submitVote,
-} from '@/src/lib/socket/client';
+} from '@/src/lib/partykit/client';
 import type { Vote, VoteCategory, Character } from '@/src/state/types/session';
 
 interface VotingInterfaceProps {
@@ -56,11 +56,11 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
     }
   }, [wrapPartyData, sessionCode, setWrapPartyData]);
 
-  // Set up socket listeners for real-time vote updates
+  // Set up PartyKit listeners for real-time vote updates
   useEffect(() => {
     if (!sessionCode || !participant) return;
 
-    initializeSocketClient();
+    initializePartyKitClient(sessionCode);
     const unsubscribe = onWrapPartyVote((data) => {
       if (data.sessionId === sessionCode) {
         // Update local state with new vote

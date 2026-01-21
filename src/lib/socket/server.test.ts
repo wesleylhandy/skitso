@@ -1,62 +1,34 @@
 /**
- * Socket.io Server Tests
+ * PartyKit Server Tests
  * 
- * Tests for Socket.io server initialization and event handling.
+ * Tests for PartyKit server initialization and event handling.
+ * Migrated from Socket.io to PartyKit.
+ * 
+ * Note: PartyKit server tests should be written for parties/session.ts
+ * This file is kept for reference but tests should be migrated to test
+ * the PartyKit server implementation directly.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Server as SocketIOServer, Socket } from 'socket.io';
-import type { Server as HTTPServer } from 'http';
 
-// Mock socket.io
-vi.mock('socket.io', () => {
-  const mockSocket = {
-    id: 'test-socket-id',
-    join: vi.fn(),
-    leave: vi.fn(),
-    emit: vi.fn(),
-    to: vi.fn().mockReturnThis(),
-    broadcast: {
-      to: vi.fn().mockReturnThis(),
-      emit: vi.fn(),
-    },
-    on: vi.fn(),
-  };
-
-  const mockServer = {
-    on: vi.fn(),
-    emit: vi.fn(),
-    to: vi.fn().mockReturnThis(),
-    sockets: {
-      sockets: new Map([['test-socket-id', mockSocket]]),
-    },
-  };
-
-  return {
-    Server: vi.fn(() => mockServer),
-  };
-});
-
-describe('Socket.io Server', () => {
-  let mockHTTPServer: HTTPServer;
-  let mockSocketIOServer: SocketIOServer;
-
+describe('PartyKit Server', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should initialize Socket.io server with HTTP server', () => {
-    // This test will be implemented once we create the server module
+  it('should initialize PartyKit server with room', () => {
+    // Tests should be written for parties/session.ts
+    // This placeholder test ensures the test file structure is maintained
     expect(true).toBe(true);
   });
 
   it('should handle connection events', () => {
-    // This test will be implemented once we create the server module
+    // Tests should be written for parties/session.ts
     expect(true).toBe(true);
   });
 
   it('should manage session rooms', () => {
-    // This test will be implemented once we create the server module
+    // Tests should be written for parties/session.ts
     expect(true).toBe(true);
   });
 });

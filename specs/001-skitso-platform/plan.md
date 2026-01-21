@@ -91,7 +91,10 @@ The platform supports role-based collaboration where a Director configures skit 
    - Server acts as single source of truth for session state
    - Local UI updates occur immediately for responsive UX
    - Server reconciles conflicts automatically
-   - Socket.io for real-time updates (<500ms latency) with automatic polling fallback
+   - PartyKit for real-time updates (<500ms latency) - Vercel-compatible WebSocket solution
+   - PartyKit server handles session rooms (parties) and event broadcasting
+   - Session state uses PartyKit storage (24h expiration) for MVP; external database optional post-MVP if longer persistence, query capabilities, or analytics needed
+   - Automatic reconnection and state recovery handled by PartyKit client
 
 3. **Theming: CSS Variables with data-theme Attribute**
    - Root element receives `data-theme="VIBE_NAME"` attribute
@@ -233,7 +236,7 @@ export const activeParticipantsAtom = atom((get) =>
 ### Phase 0: Foundation & Research
 
 1. **Research & Setup**
-   - [x] Research WebSocket vs polling for real-time sync (server-authoritative model) - Decision: Use Socket.io
+   - [x] Research WebSocket vs polling for real-time sync (server-authoritative model) - Initial Decision: Use Socket.io → Superseded by PartyKit migration (Phase 6a) for Vercel compatibility
    - [ ] Research OpenAI API best practices for style-constrained generation
    - [ ] Research CSS Variables + Tailwind v4 integration patterns
    - [ ] Research Jotai atomWithStorage patterns for session persistence
@@ -301,12 +304,13 @@ export const activeParticipantsAtom = atom((get) =>
 
 8. **Multi-Device Synchronization**
    - [ ] Design server-authoritative sync architecture
-   - [ ] Implement Socket.io for real-time synchronization (WebSocket with automatic polling fallback)
+   - [ ] Implement Socket.io for real-time synchronization (initial implementation, will be migrated to PartyKit in Phase 6a)
    - [ ] Create session state management on server
    - [ ] Implement optimistic updates (local UI updates immediately)
    - [ ] Add conflict resolution logic
    - [ ] Implement reconnection handling
    - [ ] Add connection status indicators
+   - [ ] Note: Initial implementation uses Socket.io for development. Phase 6a migrates to PartyKit for Vercel deployment.
 
 9. **Casting Couch UI**
    - [ ] Create CastingCouch component (Client Component)
@@ -351,9 +355,101 @@ export const activeParticipantsAtom = atom((get) =>
 13. **Session Persistence**
     - [ ] Ensure all atoms persist to localStorage
     - [ ] Implement session recovery on browser refresh
+    - [ ] Set up PartyKit storage for server-side session state (24h expiration)
     - [ ] Add session expiration logic (24 hours)
     - [ ] Implement session cleanup on Wrap Party completion
     - [ ] Test multi-session support (different codes)
+    - [ ] Note: PartyKit storage sufficient for MVP; external database optional post-MVP
+
+### Phase 6a: PartyKit Migration
+
+**Goal:** Migrate from Socket.io to PartyKit for Vercel-compatible deployment
+
+**Prerequisites:** Phase 6 (Synchronization) complete
+
+**Migration Steps:**
+
+1. **PartyKit Setup**
+   - Install PartyKit dependencies (@partykit/react, partykit)
+   - Create PartyKit project and configure partykit.json
+   - Set up environment variables:
+     - `NEXT_PUBLIC_PARTYKIT_HOST`: PartyKit server URL (e.g., `https://skitso.[username].partykit.dev`)
+     - `PARTYKIT_TOKEN`: Only needed for CI/CD automation, not local development
+   - Generate PartyKit access token for CI/CD:
+     - Run `npx partykit token generate` locally
+     - This opens browser for GitHub authentication
+     - Saves `PARTYKIT_LOGIN` and `PARTYKIT_TOKEN` values
+     - Store these securely (never commit to source control)
+   - Deploy PartyKit server to PartyKit managed platform (partykit.dev):
+     - Manual deployment: `npx partykit deploy` (prompts for login)
+     - Automated deployment: Configure GitHub Actions (see step 5)
+   - Note: No Cloudflare account required for managed platform deployment
+   - Free tier limits: 10 projects max, 24h storage, domain pattern: [project-name].[github-username].partykit.dev
+
+2. **Server Migration**
+   - Create parties/session.ts PartyKit server file
+   - Port event handlers from src/lib/socket/server.ts to PartyKit
+   - Implement participant tracking using PartyKit connections
+   - Set up PartyKit storage for session state (24h expiration matches FR-9 requirement)
+   - Implement 24-hour session expiration logic
+   - Note: External database optional post-MVP if longer persistence or query capabilities needed
+
+3. **Client Migration**
+   - Create src/lib/partykit/client.ts wrapper
+   - Replace Socket.io client calls in all components
+   - Update connection status tracking
+   - Test reconnection and state recovery
+
+4. **Infrastructure Changes**
+   - Remove custom server (server.ts) or keep for local dev only
+   - Update package.json scripts
+   - Update deployment documentation
+   - Remove Socket.io dependencies
+
+5. **Testing & Deployment**
+   - Update all socket-related tests
+   - End-to-end testing of migration
+   - Deploy PartyKit server to managed platform (partykit.dev):
+     - Initial manual deployment: `npx partykit deploy` to get host URL
+     - Verify deployment successful and note the PartyKit host URL
+   - Set up GitHub Actions CI/CD for automated PartyKit deployment:
+     - Generate PartyKit token: `npx partykit token generate` (if not done in step 1)
+     - Add GitHub repository secrets:
+       - `PARTYKIT_LOGIN`: Your GitHub username (from token generation)
+       - `PARTYKIT_TOKEN`: The generated token (from token generation)
+     - Create `.github/workflows/deploy-partykit.yml` workflow file:
+       - Trigger on push to main branch (or specified branch)
+       - Checkout code
+       - Set up Node.js
+       - Run `npx partykit deploy` using secrets
+       - Optional: Add deployment status checks
+     - Test workflow by pushing to main branch
+     - Verify automated deployment works correctly
+     - Note: GitHub Actions free tier provides 2,000 minutes/month for private repos (unlimited for public). Typical PartyKit deployment uses ~1-2 minutes per run, well within free tier limits.
+   - Update Vercel deployment configuration:
+     - Add `NEXT_PUBLIC_PARTYKIT_HOST` environment variable in Vercel dashboard
+     - Set value to your PartyKit host URL (e.g., `https://skitso.[username].partykit.dev`)
+     - Verify Vercel can connect to PartyKit server
+   - Document deployment workflow:
+     - Manual deployment steps
+     - CI/CD automation setup
+     - Environment variable configuration
+     - Troubleshooting common issues
+   - Verify multi-device synchronization works
+
+**Acceptance Criteria:**
+- All Socket.io features work with PartyKit
+- Multi-device synchronization maintains <500ms latency
+- Session persistence works correctly (24h expiration using PartyKit storage)
+- Reconnection handles gracefully
+- PartyKit server deployed and accessible (manual deployment successful)
+- GitHub Actions CI/CD workflow configured and tested (automated deployment works)
+- PartyKit token generated and stored securely in GitHub secrets
+- Vercel deployment configuration updated with PartyKit host URL
+- Deployment to Vercel successful
+- No increase in error rates
+
+**Reference:** See `docs/PARTYKIT_MIGRATION_ANALYSIS.md` for detailed migration plan
 
 ### Phase 6: Premium Features (Post-MVP)
 
@@ -421,7 +517,13 @@ export const activeParticipantsAtom = atom((get) =>
   - **Mitigation:** Implement retry logic with simplified prompts, show user-friendly errors, consider caching successful generations
 
 - **Risk:** Real-time synchronization latency could break performance flow
-  - **Mitigation:** Use WebSocket for low-latency updates, implement optimistic updates, add connection status indicators
+  - **Mitigation:** Use PartyKit WebSocket for low-latency updates (<500ms requirement), implement optimistic updates, add connection status indicators
+
+- **Risk:** PartyKit migration introduces bugs or performance issues
+  - **Mitigation:** Complete migration in development environment first, comprehensive testing before production, keep Socket.io code in separate branch for rollback
+
+- **Risk:** PartyKit storage limitations (24h expiration) conflict with session persistence needs
+  - **Mitigation:** PartyKit storage (24h) is sufficient for MVP per FR-9 requirement. External database (PostgreSQL/Redis) can be added post-MVP if longer persistence, query capabilities, or analytics are needed. MVP uses PartyKit storage exclusively.
 
 - **Risk:** Browser storage limits could prevent session persistence
   - **Mitigation:** Monitor localStorage usage, implement cleanup for expired sessions, consider compression for large scripts
@@ -463,8 +565,10 @@ export const activeParticipantsAtom = atom((get) =>
    - Research server-authoritative synchronization patterns
    - Compare WebSocket vs polling for <500ms latency requirements
    - Evaluate conflict resolution strategies
-   - **Decision:** Use Socket.io (WebSocket with automatic polling fallback)
+   - **Initial Decision:** Use Socket.io (WebSocket with automatic polling fallback)
+   - **Updated Decision:** Migrated to PartyKit (Phase 6a) for Vercel-compatible WebSocket support
    - **Reference:** https://context7.com/websites/socket_io/llms.txt?tokens=10000
+   - **Migration Reference:** See Phase 6a and `docs/PARTYKIT_MIGRATION_ANALYSIS.md`
 
 2. **OpenAI API Best Practices** ✅ RESOLVED
    - Research style-constrained prompt engineering

@@ -1,0 +1,5 @@
+{
+  "name": "skitso",
+  "main": "parties/session.ts",
+  "compatibilityDate": "2024-01-01"
+}

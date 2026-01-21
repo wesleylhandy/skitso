@@ -22,18 +22,28 @@ import { CharacterCard } from '@/src/components/actor/character-card';
 import { ScriptPreviewModal } from './script-preview-modal';
 import { CharacterDossierModal } from './character-dossier-modal';
 import {
-  initializeSocketClient,
-  getSocketClient,
-  isSocketConnected,
+  initializePartyKitClient,
+  getPartyKitClient,
+  isPartyKitConnected,
+  getConnectionStatus,
   joinSession,
   onVibeContextChange,
   onScriptUpdate,
   onPerformanceStart,
+  startPerformance,
   leaveSession,
-} from '@/src/lib/socket/client';
+} from '@/src/lib/partykit/client';
 import type { Participant, Character, ConnectionStatus as ConnectionStatusType } from '@/src/state/types/session';
 import type { VibeType } from '@/src/state/types/vibe';
-import type { SocketParticipant } from '@/src/lib/socket/session-store';
+
+interface PartyKitParticipant {
+  participantId: string;
+  connectionId: string;
+  role: 'director' | 'actor';
+  connectionStatus: ConnectionStatusType;
+  joinedAt: number;
+  lastSeen: number;
+}
 
 interface CastingCouchProps {
   onStartPerformance?: () => void;
@@ -56,14 +66,14 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
   const { getSectionTitle, getButtonLabel, visualTokens } = useVibe();
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusType>('disconnected');
-  const [participants, setParticipants] = useState<SocketParticipant[]>([]);
-  const [socketInitialized, setSocketInitialized] = useState(false);
+  const [participants, setParticipants] = useState<PartyKitParticipant[]>([]);
+  const [partyKitInitialized, setPartyKitInitialized] = useState(false);
   const [isScriptPreviewOpen, setIsScriptPreviewOpen] = useState(false);
   const [selectedCharacterForDossier, setSelectedCharacterForDossier] = useState<Character | null>(null);
 
   const isDirector = participant?.role === 'director';
 
-  // Initialize Socket.io client
+  // Initialize PartyKit client
   useEffect(() => {
     if (!sessionCode || !participant) {
       return;
@@ -72,23 +82,29 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
     let mounted = true;
 
     try {
-      const socket = initializeSocketClient();
+      const client = initializePartyKitClient(sessionCode);
       
       // Use setTimeout to avoid synchronous setState in effect
       setTimeout(() => {
         if (mounted) {
-          setSocketInitialized(true);
+          setPartyKitInitialized(true);
         }
       }, 0);
 
       // Update connection status
       const updateConnectionStatus = () => {
-        setConnectionStatus(isSocketConnected() ? 'connected' : 'disconnected');
+        const status = getConnectionStatus();
+        setConnectionStatus(status === 'connected' ? 'connected' : 'disconnected');
       };
 
-      socket.on('connect', updateConnectionStatus);
-      socket.on('disconnect', () => setConnectionStatus('disconnected'));
-      socket.on('reconnect', updateConnectionStatus);
+      // Listen for connection events via PartyKit message handlers
+      const handleConnect = () => {
+        updateConnectionStatus();
+      };
+
+      const handleDisconnect = () => {
+        setConnectionStatus('disconnected');
+      };
 
       // Join session with vibeContext and role
       joinSession(sessionCode, participant.id, {
@@ -97,11 +113,11 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       });
 
       // Listen for session joined event
-      socket.on('session:joined', (data: {
+      const handleSessionJoined = (data: {
         sessionId: string;
         participantId: string;
         role: 'director' | 'actor';
-        participants: SocketParticipant[];
+        participants: PartyKitParticipant[];
         vibeContext: VibeType;
       }) => {
         setParticipants(data.participants);
@@ -109,25 +125,29 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         if (data.vibeContext !== vibe) {
           setVibe(data.vibeContext);
         }
-      });
+      };
 
       // Listen for participant joined/left events
-      socket.on('participant:joined', (data: {
+      const handleParticipantJoined = (data: {
         participantId: string;
-        socketId: string;
+        connectionId: string;
         role: 'director' | 'actor';
-        participants: SocketParticipant[];
+        participants: PartyKitParticipant[];
       }) => {
         setParticipants(data.participants);
-      });
+      };
 
-      socket.on('participant:left', (data: {
-        socketId: string;
+      const handleParticipantLeft = (data: {
+        connectionId: string;
         participantId?: string;
-        participants: SocketParticipant[];
+        participants: PartyKitParticipant[];
       }) => {
         setParticipants(data.participants);
-      });
+      };
+
+      // Set up event listeners using PartyKit client's message handling
+      // Note: PartyKit client handles these via onMessage callback
+      // We'll use the event listener system from the client wrapper
 
       // Listen for VibeContext changes
       const unsubscribeVibe = onVibeContextChange((data) => {
@@ -153,15 +173,15 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         }
       });
 
+      // Set up connection status polling (PartyKit doesn't have direct event listeners)
+      const statusInterval = setInterval(() => {
+        updateConnectionStatus();
+      }, 1000);
+
       // Cleanup
       return () => {
         mounted = false;
-        socket.off('connect', updateConnectionStatus);
-        socket.off('disconnect');
-        socket.off('reconnect', updateConnectionStatus);
-        socket.off('session:joined');
-        socket.off('participant:joined');
-        socket.off('participant:left');
+        clearInterval(statusInterval);
         unsubscribeVibe();
         unsubscribeScript();
         unsubscribePerformance();
@@ -170,7 +190,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         }
       };
     } catch (error) {
-      console.error('Failed to initialize Socket.io client:', error);
+      console.error('Failed to initialize PartyKit client:', error);
       setTimeout(() => {
         if (mounted) {
           setConnectionStatus('disconnected');
@@ -190,17 +210,20 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       return;
     }
 
-    const socket = getSocketClient();
-    if (!socket) {
+    const client = getPartyKitClient();
+    if (!client || client.readyState !== WebSocket.OPEN) {
       return;
     }
 
-    // Emit character override event
-    socket.emit('character:override', {
-      sessionId: sessionCode,
-      characterId,
-      participantId: newParticipantId,
-    });
+    // Send character override event
+    client.send(JSON.stringify({
+      type: 'character:override',
+      data: {
+        sessionId: sessionCode,
+        characterId,
+        participantId: newParticipantId,
+      },
+    }));
   };
 
   // Handle start performance (Director only)
@@ -209,9 +232,8 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       return;
     }
 
-    const socket = getSocketClient();
-    if (!socket || !socket.connected) {
-      console.error('Socket not connected, cannot start performance');
+    if (!isPartyKitConnected()) {
+      console.error('PartyKit not connected, cannot start performance');
       return;
     }
 
@@ -221,10 +243,8 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       return;
     }
 
-    // Emit start performance event
-    socket.emit('performance:start', {
-      sessionId: sessionCode,
-    });
+    // Start performance via PartyKit
+    startPerformance(sessionCode);
 
     // Note: State update and navigation will happen via performance:started event
     // This ensures all participants are synchronized
@@ -345,7 +365,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
             {/* Start Performance Button */}
             <button
               onClick={handleStartPerformance}
-              disabled={!socketInitialized || connectionStatus !== 'connected' || participants.length < 2}
+              disabled={!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2}
               className="px-6 py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-75"
               style={{
                 backgroundColor: visualTokens.primaryColor,

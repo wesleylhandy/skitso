@@ -18,11 +18,11 @@ import { validateSessionCodeSecurity } from '@/src/lib/utils/session-code';
 import { ErrorMessage } from '@/src/components/ui/error-message';
 import { ConnectionStatus } from '@/src/components/ui/connection-status';
 import {
-  initializeSocketClient,
-  getSocketClient,
-  isSocketConnected,
+  initializePartyKitClient,
+  getPartyKitClient,
+  isPartyKitConnected,
   joinSession,
-} from '@/src/lib/socket/client';
+} from '@/src/lib/partykit/client';
 import type { Participant } from '@/src/state/types/session';
 import type { VibeType } from '@/src/state/types/vibe';
 import type { ConnectionStatus as ConnectionStatusType } from '@/src/state/types/session';
@@ -49,18 +49,10 @@ export function SessionJoinForm() {
   const [joined, setJoined] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusType>('disconnected');
 
-  // Cleanup socket connection on unmount
+  // Cleanup PartyKit connection on unmount
   useEffect(() => {
     return () => {
-      if (joined) {
-        const socket = getSocketClient();
-        if (socket) {
-          socket.off('connect');
-          socket.off('disconnect');
-          socket.off('reconnect');
-          socket.off('reconnect_attempt');
-        }
-      }
+      // PartyKit cleanup handled by component unmount
     };
   }, [joined]);
 
@@ -127,29 +119,28 @@ export function SessionJoinForm() {
       // Mark as joined
       setJoined(true);
 
-      // Initialize Socket.io connection after successful join
+      // Initialize PartyKit connection after successful join
       try {
-        const socket = initializeSocketClient();
+        const client = initializePartyKitClient(sessionCode);
         
         // Update connection status
         const updateConnectionStatus = () => {
-          setConnectionStatus(isSocketConnected() ? 'connected' : 'disconnected');
+          setConnectionStatus(isPartyKitConnected() ? 'connected' : 'disconnected');
         };
-
-        socket.on('connect', updateConnectionStatus);
-        socket.on('disconnect', () => setConnectionStatus('disconnected'));
-        socket.on('reconnect', updateConnectionStatus);
-        socket.on('reconnect_attempt', () => setConnectionStatus('reconnecting'));
 
         // Join session room (actor role)
         joinSession(sessionCode, joinData.participant.id, {
           role: 'actor',
         });
 
-        // Initial status check
+        // Initial status check and periodic updates
         updateConnectionStatus();
-      } catch (socketError) {
-        console.error('Failed to initialize Socket.io connection:', socketError);
+        const statusInterval = setInterval(updateConnectionStatus, 1000);
+        
+        // Cleanup interval after 5 seconds
+        setTimeout(() => clearInterval(statusInterval), 5000);
+      } catch (partyKitError) {
+        console.error('Failed to initialize PartyKit connection:', partyKitError);
         setConnectionStatus('disconnected');
       }
 

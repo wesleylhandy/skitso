@@ -15,17 +15,19 @@ import { castAtom } from '@/src/state/atoms/cast-atom';
 import { vibeAtom } from '@/src/state/atoms/vibe-atom';
 import type { Character } from '@/src/state/types/session';
 
-// Mock socket client
-vi.mock('@/src/lib/socket/client', () => ({
-  initializeSocketClient: vi.fn(),
-  getSocketClient: vi.fn(() => ({
-    on: vi.fn(),
-    off: vi.fn(),
-    emit: vi.fn(),
-    connected: true,
+// Mock PartyKit client
+vi.mock('@/src/lib/partykit/client', () => ({
+  initializePartyKitClient: vi.fn(),
+  getPartyKitClient: vi.fn(() => ({
+    readyState: WebSocket.OPEN,
+    room: 'test-room',
+    send: vi.fn(),
+    close: vi.fn(),
   })),
+  isPartyKitConnected: vi.fn(() => true),
   onWrapPartyVote: vi.fn(() => () => {}),
   submitVote: vi.fn(),
+  getConnectionStatus: vi.fn(() => 'connected'),
 }));
 
 const mockCharacters: Character[] = [

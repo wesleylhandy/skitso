@@ -136,6 +136,11 @@ export async function POST(request: NextRequest) {
         
         const completion = await openai.chat.completions.create(completionParams);
 
+        // Handle both regular and stream responses
+        if (!('choices' in completion) || !completion.choices || completion.choices.length === 0) {
+          throw new Error('Invalid response format from OpenAI');
+        }
+        
         const content = completion.choices[0]?.message?.content;
         if (!content) throw new Error('No content in response');
 

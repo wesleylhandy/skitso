@@ -1,28 +1,26 @@
 /**
- * Socket.io API Route Handler
+ * PartyKit API Route Handler
  * 
- * Note: Next.js App Router doesn't support WebSocket upgrades directly.
- * This route handler works with a custom server setup (see server.ts in project root).
+ * Note: This endpoint is deprecated. Real-time synchronization is now handled
+ * by PartyKit server (parties/session.ts). This route is kept for backwards
+ * compatibility but should not be used in new code.
  * 
- * For production on Vercel, consider:
- * - Using a separate Socket.io server
- * - Using Server-Sent Events (SSE) as an alternative
- * - Using polling-only mode
+ * For real-time features, use the PartyKit client from src/lib/partykit/client.ts
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 /**
  * GET /api/socket
  * 
- * Health check endpoint for Socket.io server
+ * Deprecated endpoint - PartyKit migration complete
  */
 export async function GET() {
   return NextResponse.json(
     {
-      message: 'Socket.io server endpoint',
-      status: 'active',
-      note: 'This endpoint requires a custom server setup for WebSocket support',
+      message: 'This endpoint is deprecated',
+      status: 'migrated',
+      note: 'Real-time synchronization is now handled by PartyKit. Use src/lib/partykit/client.ts instead.',
     },
     { status: 200 }
   );
@@ -31,14 +29,14 @@ export async function GET() {
 /**
  * POST /api/socket
  * 
- * Fallback endpoint for Socket.io (when WebSocket is not available)
+ * Deprecated endpoint - PartyKit migration complete
  */
 export async function POST() {
   return NextResponse.json(
     {
-      error: 'WebSocket connection required',
-      message: 'Socket.io requires WebSocket support. Please use the custom server setup.',
+      error: 'Deprecated endpoint',
+      message: 'This endpoint is deprecated. Use PartyKit client for real-time features.',
     },
-    { status: 426 } // 426 Upgrade Required
+    { status: 410 } // 410 Gone
   );
 }

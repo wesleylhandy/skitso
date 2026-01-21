@@ -41,6 +41,10 @@ The application operates as a linear session flow: Vibe Selection → Director's
 - Q: What is the Character Dossier component, and how does it relate to existing character viewing functionality? → A: Character Dossier is a detailed character view screen accessible from Casting Couch, showing full character information (name, archetype, traits, visual representation, hidden motivation for assigned Actor)
 - Q: What specific visual and textual differences should Director's Desk exhibit across themes beyond basic color/font changes? → A: Each theme has distinct layout patterns (card styles, spacing, component arrangements), section title wording, button label terminology, placeholder text phrasing, and visual effects (glows, borders, shadows) - all defined in VibeContext config
 
+### Session 2025-01-21
+
+- Q: What session storage strategy should be used for MVP - PartyKit storage or external database? → A: Use PartyKit storage for MVP (24h expiration sufficient per FR-9 requirement). External database can be added post-MVP if longer persistence, query capabilities, or analytics are needed.
+
 ## User Scenarios & Testing
 
 ### Scenario 1: Director Creates a Skit Session
@@ -274,7 +278,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 
 ### FR-5: Multi-Device Synchronization
 
-**Description:** All participants' devices must synchronize to the Director's VibeContext and maintain real-time state alignment during the session. Synchronization uses a server-authoritative model with optimistic updates: local UI updates occur immediately for responsive user experience, while the server acts as the single source of truth and reconciles any conflicts.
+**Description:** All participants' devices must synchronize to the Director's VibeContext and maintain real-time state alignment during the session. Synchronization uses a server-authoritative model with optimistic updates: local UI updates occur immediately for responsive user experience, while the server acts as the single source of truth and reconciles any conflicts. Implemented using PartyKit for Vercel-compatible WebSocket support.
 
 **Acceptance Criteria:**
 - When Actor joins using session code, their device immediately syncs to Director's VibeContext
@@ -388,10 +392,11 @@ The application operates as a linear session flow: Vibe Selection → Director's
 **Description:** Sessions must persist across browser refreshes, handle disconnections gracefully, and maintain state until completion.
 
 **Acceptance Criteria:**
-- Session state persists in browser storage
+- Session state persists in browser storage (localStorage) and PartyKit server storage
 - Users can refresh browser without losing session progress
 - Session data includes: VibeContext, configuration, cast, script, performance progress
 - Sessions expire after 24 hours from creation or last activity (whichever is later)
+- PartyKit storage provides server-side session persistence (24h expiration matches requirement)
 - Disconnected users can rejoin using same session code (8-10 character alphanumeric) or shareable link
 - Director can end session early (transitions to Wrap Party)
 - Session cleanup occurs after Wrap Party completion or expiration
@@ -717,7 +722,9 @@ The application operates as a linear session flow: Vibe Selection → Director's
    - Real-time synchronization uses server-authoritative model with optimistic updates
    - Server acts as single source of truth for session state
    - Local UI updates occur immediately for responsive experience, with server reconciliation for conflicts
-   - Real-time synchronization uses polling or WebSocket technology
+   - Real-time synchronization uses PartyKit (WebSocket-based, Vercel-compatible)
+   - PartyKit provides automatic reconnection and state recovery
+   - Session state uses PartyKit storage (24h expiration) for MVP; external database optional post-MVP if longer persistence or query capabilities needed
    - Network interruptions are infrequent and recoverable
    - Participants are in same timezone or timezone differences are handled gracefully
 
@@ -730,6 +737,8 @@ The application operates as a linear session flow: Vibe Selection → Director's
 
 ### External Services
 - **AI Generation Service:** Required for script generation, character generation, and image generation. Service must support style-constrained generation and return structured data (JSON).
+- **Real-Time Communication Service:** PartyKit (WebSocket server, Vercel-compatible) for real-time session synchronization and multi-device communication. Deployed to PartyKit managed platform (partykit.dev) - no Cloudflare account required. Free tier limits: 10 projects max, 24h storage expiration, domain pattern: [project-name].[github-username].partykit.dev.
+- **Session Storage:** PartyKit storage (24h expiration) for MVP. External database (PostgreSQL/Redis) optional post-MVP if longer persistence, query capabilities, or analytics are needed.
 - **Video Chat Service (Premium):** Required for premium video chat feature. Service must support multi-participant video calls with audio synchronization.
 - **Storage Service (Premium):** Required for recording storage and sharing. Service must support video file storage, CDN delivery, and access control.
 
@@ -764,3 +773,12 @@ The application operates as a linear session flow: Vibe Selection → Director's
 9. **Performance Duration:** What is the target and maximum duration for a performance? (Assumed 2-5 minutes - needs confirmation)
 
 10. **Chaos Level Impact:** How exactly does the chaos level (1-10) affect script generation? What are the specific differences between low and high chaos levels?
+
+11. **Real-Time Synchronization Platform:** ✅ RESOLVED - Using PartyKit for Vercel-compatible WebSocket support.
+    - **Decision:** Migrate from Socket.io to PartyKit
+    - **Rationale:** Vercel doesn't support custom servers or WebSockets; PartyKit provides free tier with full WebSocket support
+    - **Migration Analysis:** See `docs/PARTYKIT_MIGRATION_ANALYSIS.md`
+    - **Deployment:** PartyKit managed platform (partykit.dev) - no Cloudflare account required. Supports GitHub Actions CI/CD for automated deployment.
+    - **Free Tier Limits:** 10 projects max, 24h storage expiration, domain pattern: [project-name].[github-username].partykit.dev
+    - **Cost:** Free tier covers MVP needs
+    - **Timeline:** Migration planned for Phase 6a (after Phase 6 or Phase 7 completion)

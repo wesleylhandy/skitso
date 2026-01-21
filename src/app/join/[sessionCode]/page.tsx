@@ -19,9 +19,9 @@ import { CharacterCard } from '@/src/components/actor/character-card';
 import { ErrorMessage } from '@/src/components/ui/error-message';
 import { BackButton } from '@/src/components/ui/back-button';
 import {
-  initializeSocketClient,
+  initializePartyKitClient,
   onPerformanceStart,
-} from '@/src/lib/socket/client';
+} from '@/src/lib/partykit/client';
 import type { VibeType } from '@/src/state/types/vibe';
 
 interface SessionJoinPageProps {
@@ -69,63 +69,76 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
           setSessionCode(sessionCode);
         }
 
-        // Now connect via socket to get real-time state
+        // Now connect via PartyKit to get real-time state
         try {
-          const socket = initializeSocketClient();
+          const client = initializePartyKitClient(sessionCode);
           
-          // Wait for socket connection
+          // Wait for PartyKit connection
           const waitForConnection = (): Promise<void> => {
             return new Promise((resolve, reject) => {
-              if (socket.connected) {
+              if (client.readyState === WebSocket.OPEN) {
                 resolve();
                 return;
               }
 
               const timeout = setTimeout(() => {
-                socket.off('connect', onConnect);
-                socket.off('connect_error', onError);
-                reject(new Error('Socket connection timeout'));
+                reject(new Error('PartyKit connection timeout'));
               }, 5000);
 
-              const onConnect = () => {
-                clearTimeout(timeout);
-                socket.off('connect_error', onError);
-                resolve();
+              const checkConnection = () => {
+                if (client.readyState === WebSocket.OPEN) {
+                  clearTimeout(timeout);
+                  resolve();
+                } else if (client.readyState === WebSocket.CLOSED) {
+                  clearTimeout(timeout);
+                  reject(new Error('PartyKit connection closed'));
+                }
               };
 
-              const onError = (err: Error) => {
-                clearTimeout(timeout);
-                socket.off('connect', onConnect);
-                reject(err);
-              };
-
-              socket.once('connect', onConnect);
-              socket.once('connect_error', onError);
+              const interval = setInterval(checkConnection, 100);
+              
+              // Cleanup interval on timeout or success
+              setTimeout(() => clearInterval(interval), 5000);
             });
           };
 
           await waitForConnection();
 
-          // Request state recovery from socket server
-          socket.emit('state:recover', {
-            sessionId: sessionCode,
-            timestamp: Date.now(),
-          });
+          // Request state recovery from PartyKit server
+          client.send(JSON.stringify({
+            type: 'state:recover',
+            data: {
+              sessionId: sessionCode,
+              timestamp: Date.now(),
+            },
+          }));
 
           // Listen for state recovery response
-          const onStateRecovered = (recoveredData: {
+          const handleStateRecovered = (recoveredData: {
             sessionId: string;
             vibeContext: VibeType;
             status: string;
             participants: unknown[];
           }) => {
             if (recoveredData.sessionId === sessionCode && mounted) {
-              // Update vibe from socket (source of truth)
+              // Update vibe from PartyKit (source of truth)
               setVibe(recoveredData.vibeContext);
             }
           };
 
-          socket.on('state:recovered', onStateRecovered);
+          // Set up event listener for state:recovered
+          const onMessage = (event: MessageEvent) => {
+            try {
+              const message = JSON.parse(event.data);
+              if (message.type === 'state:recovered') {
+                handleStateRecovered(message.data);
+              }
+            } catch (error) {
+              // Ignore parse errors
+            }
+          };
+
+          client.addEventListener('message', onMessage);
 
           // Listen for performance start
           const unsubscribePerformance = onPerformanceStart((data) => {
@@ -139,17 +152,17 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
 
           // Cleanup function
           socketCleanup = () => {
-            socket.off('state:recovered', onStateRecovered);
+            client.removeEventListener('message', onMessage);
             unsubscribePerformance();
           };
 
-          // Set loading to false after socket connection
+          // Set loading to false after PartyKit connection
           if (mounted) {
             setLoading(false);
           }
-        } catch (socketError) {
-          console.warn('Failed to connect via socket, using REST API data:', socketError);
-          // If socket fails, we already have data from REST API
+        } catch (partyKitError) {
+          console.warn('Failed to connect via PartyKit, using REST API data:', partyKitError);
+          // If PartyKit fails, we already have data from REST API
           if (mounted) {
             setLoading(false);
           }
