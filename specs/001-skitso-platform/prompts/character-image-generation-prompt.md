@@ -1,16 +1,16 @@
 # Character Image Generation Prompt Template
 
 **Endpoint:** `/api/openai/character-image`  
-**Model:** gpt-image-1.5 (or GPT to generate gpt-image-1.5 prompt)  
+**Model:** Configured via `process.env.OPENAI_MODEL_IMAGE_PROMPT` (e.g., gpt-image-1.5, dall-e-3, etc.)  
 **Purpose:** Generate character visual representations that match the VibeContext art style and character personality
 
 ---
 
-## System Prompt (For GPT-Generated gpt-image-1.5 Prompts)
+## System Prompt
 
 You are a professional character visual designer. I will provide you with a {{character}} object containing character details, and a {{vibeContext}} that defines the art style requirements.
 
-Your task is to generate an optimized gpt-image-1.5 image generation prompt that will create a visual representation of the character matching the vibe's aesthetic style.
+Your task is to generate a visual representation of the character matching the vibe's aesthetic style. Create an image that captures the character's personality, appearance, and the specific art style requirements for the given VibeContext.
 
 **Content Guidelines:**
 - No violence, weapons, or sexually explicit content
@@ -72,49 +72,19 @@ Your task is to generate an optimized gpt-image-1.5 image generation prompt that
 - Use attribute ratings to inform visual details (e.g., high confidence = direct eye contact, high chaos = wilder appearance)
 - Character name can inform visual style (modern names = modern appearance, classic names = timeless appearance)
 
-**gpt-image-1.5 Prompt Structure:**
-The generated prompt should be:
-- 400 characters or less (gpt-image-1.5 limit)
-- Specific and detailed
-- Include: character appearance, pose/expression, art style, lighting, composition
-- Avoid: vague descriptions, conflicting instructions, overly complex requests
+**Image Generation Guidelines:**
+- Generate a high-quality character image that matches the VibeContext art style
+- Character should be visually distinct and memorable
+- Art style must match the VibeContext aesthetic precisely
+- Character appearance should reflect their personality traits and archetype
+- Image should be appropriate for G, PG, or PG-13 audiences
+- No violence, weapons, or sexually explicit content
 
-**Output Format:**
-If using GPT to generate the gpt-image-1.5 prompt, output a JSON object:
-```json
-{
-  "imagePrompt": string,
-  "styleNotes": string
-}
-```
-
-If using directly with gpt-image-1.5, the `imagePrompt` string should be used as the gpt-image-1.5 prompt.
-
-**Important:**
-- Do not add commentary before or after the JSON output
-- Output only valid JSON
-- Image prompt must be under 400 characters
-- Style notes are optional metadata for reference
-
----
-
-## Direct gpt-image-1.5 Usage
-
-If using the prompt directly with gpt-image-1.5 API, construct the prompt using this template:
-
-```
-[Character description: age, appearance, clothing, expression] in [VibeContext art style] with [specific visual effects]. [Composition details]. [Lighting details]. [Mood/atmosphere].
-```
-
-**Example for VIRAL_NEON:**
-```
-A confident Gen Z person with neon green hair, wearing streetwear, energetic expression, in neon glitch aesthetic with vibrant colors, digital artifacts, and glow effects. Dynamic pose, TikTok-ready framing. Harsh neon lighting with colored shadows. High-energy, trend-focused mood.
-```
-
-**Example for INDIE_A24:**
-```
-A thoughtful person in their 20s, wearing simple elegant clothing, contemplative expression, in cinematic film grain aesthetic with muted color palette and soft focus. Thoughtful framing, rule of thirds. Natural soft lighting with warm tones. Contemplative, artistic mood.
-```
+**Image Specifications:**
+- Size: 1024x1024 pixels
+- Quality: High resolution, detailed
+- Format: Standard quality (balanced between detail and generation speed)
+- Style: Must precisely match the VibeContext requirements below
 
 ---
 
@@ -137,38 +107,11 @@ A thoughtful person in their 20s, wearing simple elegant clothing, contemplative
 }
 ```
 
-**Expected Output (GPT-generated):**
-```json
-{
-  "imagePrompt": "A confident Gen Z person with neon green hair, vibrant streetwear, extremely confident expression with direct eye contact, in neon glitch aesthetic with digital artifacts, scanlines, and cyan-purple glow effects. Dynamic TikTok-ready pose, energetic framing. Harsh neon backlighting with colored shadows. High-energy, trend-focused Gen Z aesthetic.",
-  "styleNotes": "Emphasizes confidence (95 rating) through strong posture and direct gaze. High chaos level (88) reflected in wild hair and dynamic pose. Main Character archetype shown through prominent positioning."
-}
-```
-
-**Direct gpt-image-1.5 Prompt (extracted):**
-```
-A confident Gen Z person with neon green hair, vibrant streetwear, extremely confident expression with direct eye contact, in neon glitch aesthetic with digital artifacts, scanlines, and cyan-purple glow effects. Dynamic TikTok-ready pose, energetic framing. Harsh neon backlighting with colored shadows. High-energy, trend-focused Gen Z aesthetic.
-```
-
----
-
-## Implementation Notes
-
-1. **Two-Stage Approach (Recommended)**:
-   - Use GPT to generate optimized gpt-image-1.5 prompt from character data
-   - Use generated prompt with gpt-image-1.5 API to create image
-   - Store both the final prompt and image URL
-
-2. **Direct Approach**:
-   - Construct gpt-image-1.5 prompt directly using template
-   - Use with gpt-image-1.5 API
-   - Store prompt and image URL
-
-3. **Error Handling**:
-   - If gpt-image-1.5 generation fails, retry with simplified prompt
-   - Remove style-specific terms if retry needed
-   - Fallback to basic character description if multiple retries fail
-
-4. **Caching**:
-   - Consider caching generated images for same character + vibe combinations
-   - Regenerate if character attributes change significantly
+**Expected Result:**
+A generated image URL pointing to a 1024x1024 character image matching the VIRAL_NEON aesthetic with:
+- Neon green hair, vibrant streetwear
+- Extremely confident expression with direct eye contact
+- Neon glitch aesthetic with digital artifacts, scanlines, and cyan-purple glow effects
+- Dynamic TikTok-ready pose, energetic framing
+- Harsh neon backlighting with colored shadows
+- High-energy, trend-focused Gen Z aesthetic
