@@ -50,7 +50,7 @@ const ScriptResponseSchema = z.object({
 const RequestSchema = z.object({
   vibeContext: z.enum(['VIRAL_NEON', 'INDIE_A24', 'SITCOM_STUDIO', 'BRAINROT_THEATER', 'QUIET_STUDIO']),
   theme: z.string().min(10).max(200),
-  tone: z.string(),
+  tone: z.enum(['comedic', 'dramatic', 'satirical', 'absurd', 'serious', 'romantic']),
   characters: z.array(
     z.object({
       id: z.string(),
@@ -68,8 +68,8 @@ const RequestSchema = z.object({
   ),
   sceneCount: z.number().int().min(1).max(10),
   chaosLevel: z.number().int().min(1).max(10),
-  plot: z.string().optional(),
-  jokes: z.array(z.string()).optional(),
+  plot: z.string().max(2000).optional(),
+  jokes: z.array(z.string().max(500)).optional(),
 });
 
 function generateSimplifiedScriptPrompt(vibeContext: VibeType, theme: string, characterNames: string[]): string {

@@ -19,12 +19,20 @@ export type ConnectionStatus =
   | 'disconnected'
   | 'reconnecting';
 
+export type AssignmentStatus = 
+  | 'none' // No assignment or request
+  | 'requested' // Actor has requested a character
+  | 'pending' // Director has assigned, waiting for actor confirmation
+  | 'locked'; // Assignment is confirmed and locked
+
 export interface Participant {
   id: string;
   sessionId: string;
   role: 'director' | 'actor';
   name: string;
   characterAssignment: Character | null;
+  assignmentStatus: AssignmentStatus;
+  requestedCharacterId: string | null; // Character ID actor requested
   connectionStatus: ConnectionStatus;
   joinedAt: number;
   deviceInfo: {
@@ -38,6 +46,7 @@ export interface Character {
   id: string;
   sessionId: string;
   participantId: string | null;
+  isLocked: boolean; // Whether assignment is locked (cannot be reassigned)
   name: string;
   archetypeLabel: string;
   personalityTraits: string[];
@@ -126,4 +135,17 @@ export interface WrapPartyData {
   feedback: Feedback[];
   sharedLinks: SharedLink[];
   createdAt: number;
+}
+
+export interface AssignmentRequest {
+  participantId: string;
+  characterId: string;
+  requestedAt: number;
+}
+
+export interface AssignmentApproval {
+  participantId: string;
+  characterId: string | null; // null if director suggests different character
+  suggestedCharacterId: string | null; // Character director suggests instead
+  approvedAt: number;
 }

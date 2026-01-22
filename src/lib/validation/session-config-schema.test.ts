@@ -57,11 +57,11 @@ describe('SessionConfigurationSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('should reject participant count greater than 10', () => {
+  it('should reject participant count greater than 5', () => {
     const invalid = {
       theme: 'A group of friends trying to go viral',
       tone: 'comedic' as const,
-      participantCount: 11,
+      participantCount: 6,
       chaosLevel: 5,
     };
 

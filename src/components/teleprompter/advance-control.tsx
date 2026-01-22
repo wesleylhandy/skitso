@@ -34,7 +34,7 @@ export function AdvanceControl({
 }: AdvanceControlProps) {
   const participant = useAtomValue(participantAtom);
   const progress = useAtomValue(performanceProgressAtom);
-  const { getButtonLabel } = useVibe();
+  const { getButtonLabel, visualTokens } = useVibe();
 
   const isDirector = participant?.role === 'director';
   const hasOverride = progress.advancementControl.directorOverride && isDirector;
@@ -45,10 +45,13 @@ export function AdvanceControl({
         <button
           onClick={onResume}
           disabled={!canAdvance || (!isDirector && hasOverride)}
-          className="px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-3 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: 'var(--color-primary)',
             color: 'var(--color-bg)',
+            borderRadius: visualTokens.borderRadius,
+            fontFamily: visualTokens.headerFont,
+            cursor: (!canAdvance || (!isDirector && hasOverride)) ? 'not-allowed' : 'pointer',
           }}
           aria-label={getButtonLabel('resume') || 'Resume'}
         >
@@ -59,10 +62,13 @@ export function AdvanceControl({
           {onPause && isDirector && (
             <button
               onClick={onPause}
-              className="px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
               style={{
                 backgroundColor: 'var(--color-accent)',
                 color: 'var(--color-bg)',
+                borderRadius: visualTokens.borderRadius,
+                fontFamily: visualTokens.headerFont,
+                cursor: 'pointer',
               }}
               aria-label={getButtonLabel('pause') || 'Pause'}
             >
@@ -72,10 +78,13 @@ export function AdvanceControl({
           <button
             onClick={onAdvance}
             disabled={!canAdvance || (!isDirector && hasOverride)}
-            className="px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-3 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               backgroundColor: 'var(--color-primary)',
               color: 'var(--color-bg)',
+              borderRadius: visualTokens.borderRadius,
+              fontFamily: visualTokens.headerFont,
+              cursor: (!canAdvance || (!isDirector && hasOverride)) ? 'not-allowed' : 'pointer',
             }}
             aria-label={getButtonLabel('advance') || 'Advance'}
           >

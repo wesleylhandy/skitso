@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, use } from 'react';
 import dynamic from 'next/dynamic';
 import { useAtomValue } from 'jotai';
 import { useRouter } from 'next/navigation';
@@ -27,11 +27,11 @@ const Teleprompter = dynamic(
 );
 
 interface StagePageProps {
-  params: { sessionCode: string };
+  params: Promise<{ sessionCode: string }>;
 }
 
 export default function StagePage({ params }: StagePageProps) {
-  const { sessionCode } = params;
+  const { sessionCode } = use(params);
   const router = useRouter();
   const storedSessionCode = useAtomValue(sessionCodeAtom);
   const participant = useAtomValue(participantAtom);

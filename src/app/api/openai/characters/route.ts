@@ -34,15 +34,15 @@ const CharacterResponseSchema = z.object({
 
 const RequestSchema = z.object({
   vibeContext: z.enum(['VIRAL_NEON', 'INDIE_A24', 'SITCOM_STUDIO', 'BRAINROT_THEATER', 'QUIET_STUDIO']),
-  participantCount: z.number().int().min(2).max(10),
+  participantCount: z.number().int().min(2).max(5),
   directorDefinedCharacters: z.array(
     z.object({
-      name: z.string(),
-      role: z.string().optional(),
+      name: z.string().min(1).max(50),
+      role: z.string().max(50).optional(),
     })
   ).optional(),
-  theme: z.string().optional(),
-  tone: z.string().optional(),
+  theme: z.string().max(200).optional(),
+  tone: z.string().max(50).optional(),
 });
 
 /**

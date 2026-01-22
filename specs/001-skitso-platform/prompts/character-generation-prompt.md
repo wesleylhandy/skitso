@@ -21,7 +21,7 @@ You must generate characters that match the vibe's aesthetic, naming conventions
 
 **Variable Formats:**
 - {{vibeContext}} will come in the form of a string: "VIRAL_NEON", "INDIE_A24", "SITCOM_STUDIO", "BRAINROT_THEATER", or "QUIET_STUDIO"
-- {{participantCount}} will come in the form of an integer (2-10)
+- {{participantCount}} will come in the form of an integer (2-5, MVP limit)
 - {{directorDefinedCharacters}} will come in the form of an optional array of objects containing name and optional role request: `[{name: string, role?: string}]`
 - {{theme}} will come in the form of a string (optional, for context)
 - {{tone}} will come in the form of a string (optional, for context)

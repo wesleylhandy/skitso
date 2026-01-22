@@ -35,16 +35,53 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     return flattenScriptLines(script);
   }, [script]);
 
-  // Handle dialog open/close
+  // Handle dialog open/close and body scroll lock
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     if (isOpen) {
       dialog.showModal();
+      // Lock body scroll when modal is open
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
     } else {
       dialog.close();
     }
+  }, [isOpen]);
+
+  // Prevent scroll propagation to background
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !isOpen) return;
+
+    const scrollableContent = dialog.querySelector('.script-preview-scroll') as HTMLElement;
+    if (!scrollableContent) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollableContent;
+      const isAtTop = scrollTop === 0;
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+      // Prevent scroll propagation if not at boundaries
+      if (!isAtTop && !isAtBottom) {
+        e.stopPropagation();
+      } else if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+        // At boundary and trying to scroll further - prevent background scroll
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    scrollableContent.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      scrollableContent.removeEventListener('wheel', handleWheel);
+    };
   }, [isOpen]);
 
   // Handle ESC key and backdrop click
@@ -135,7 +172,7 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     <dialog
       ref={dialogRef}
       onClick={handleBackdropClick}
-      className="w-full max-w-4xl max-h-[90vh] rounded-lg p-0 m-auto"
+      className="w-full max-w-4xl max-h-[90vh] rounded-lg p-0 m-auto overflow-hidden"
       style={{
         backgroundColor: visualTokens.bgColor,
         color: visualTokens.textColor,
@@ -148,7 +185,6 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
         transform: 'translate(-50%, -50%)',
         margin: 0,
         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-        overflow: 'hidden',
       }}
     >
       <div className="flex flex-col h-full max-h-[90vh] overflow-hidden">
@@ -188,7 +224,7 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
 
         {/* Script Content - Scrollable */}
         <div 
-          className="flex-1 overflow-y-auto p-6 script-preview-scroll"
+          className="flex-1 overflow-y-auto p-6 script-preview-scroll overscroll-contain"
           style={{ 
             scrollbarWidth: 'thin',
             scrollbarColor: `${visualTokens.primaryColor}40 transparent`,

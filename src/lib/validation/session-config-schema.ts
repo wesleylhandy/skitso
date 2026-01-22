@@ -29,7 +29,7 @@ export type DirectorDefinedCharacter = z.infer<typeof DirectorDefinedCharacterSc
 export const SessionConfigurationSchema = z.object({
   theme: z.string().min(10).max(200),
   tone: TonePreferenceSchema,
-  participantCount: z.number().int().min(2).max(10),
+  participantCount: z.number().int().min(2).max(5),
   chaosLevel: z.number().int().min(1).max(10),
   directorDefinedCharacters: z.array(DirectorDefinedCharacterSchema).optional(),
 });

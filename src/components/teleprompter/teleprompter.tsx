@@ -8,15 +8,19 @@
 
 'use client';
 
-import { useEffect, useRef, useMemo, useCallback } from 'react';
-import { useAtom, useAtomValue } from 'jotai';
+import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { useRouter } from 'next/navigation';
 import { useVibe } from '@/src/lib/hooks/use-vibe';
 import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { participantAtom } from '@/src/state/atoms/participant-atom';
 import { performanceProgressAtom, type PerformanceProgress } from '@/src/state/atoms/performance-atom';
+import { sessionStateAtom } from '@/src/state/atoms/session-state-atom';
+import { sessionCodeAtom } from '@/src/state/atoms/session-atom';
 import { AdvanceControl } from './advance-control';
 import { TimingIndicator } from './timing-indicator';
 import { flattenScriptLines, getUpcomingLines } from './script-lines';
+import { ConfirmationModal } from '@/src/components/ui/confirmation-modal';
 import {
   initializePartyKitClient,
   onPerformanceProgress,
@@ -36,9 +40,13 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
   const script = useAtomValue(currentScriptAtom);
   const participant = useAtomValue(participantAtom);
   const [progress, setProgress] = useAtom(performanceProgressAtom);
+  const setSessionState = useSetAtom(sessionStateAtom);
+  const storedSessionCode = useAtomValue(sessionCodeAtom);
+  const router = useRouter();
   const { visualTokens } = useVibe();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLDivElement>(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   
   // Derive pause state from progress
   const isPaused = progress.pausedAt !== null;
@@ -98,6 +106,33 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       });
     }
   }, [progress.currentLineIndex, visualTokens.animationStyle]);
+
+  // Handle start performance (Director only)
+  const handleStart = useCallback(() => {
+    if (participant?.role !== 'director') return;
+
+    const startedAt = Date.now();
+    const updatedProgress: PerformanceProgress = {
+      ...progress,
+      startedAt,
+      pausedAt: null,
+      advancementControl: {
+        lastAdvancedBy: participant.id,
+        lastAdvancedAt: startedAt,
+        directorOverride: false,
+      },
+    };
+
+    setProgress(updatedProgress);
+
+    advancePerformance(sessionCode, {
+      currentLineIndex: progress.currentLineIndex,
+      currentScene: progress.currentScene,
+      startedAt,
+      pausedAt: null,
+      completedLines: progress.completedLines,
+    });
+  }, [participant, progress, sessionCode, setProgress]);
 
   // Handle script advancement
   const handleAdvance = useCallback(() => {
@@ -187,6 +222,35 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     });
   }, [participant, progress, sessionCode, setProgress]);
 
+  // Handle exit/stop performance
+  const handleExit = useCallback(() => {
+    // Reset performance progress
+    setProgress({
+      currentLineIndex: 0,
+      currentScene: 0,
+      startedAt: null,
+      pausedAt: null,
+      completedLines: [],
+      advancementControl: {
+        lastAdvancedBy: null,
+        lastAdvancedAt: null,
+        directorOverride: false,
+      },
+    });
+
+    // Set session state back to casting (keep session active)
+    setSessionState('casting');
+
+    // Navigate based on role
+    if (participant?.role === 'director') {
+      router.push('/director-desk');
+    } else if (storedSessionCode) {
+      router.push(`/join/${storedSessionCode}`);
+    } else {
+      router.push('/');
+    }
+  }, [participant, storedSessionCode, router, setProgress, setSessionState]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -195,6 +259,11 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
         if (!isPaused && !progress.advancementControl.directorOverride) {
           handleAdvance();
         }
+      }
+      // Escape key to exit
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowExitConfirm(true);
       }
     };
 
@@ -214,34 +283,151 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
   }
 
   const canAdvance = !isPaused && progress.currentLineIndex < scriptLines.length - 1;
+  const isDirector = participant?.role === 'director';
+  const hasStarted = progress.startedAt !== null;
+  const { getButtonLabel } = useVibe();
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--color-bg)' }}>
-      {/* Header */}
-      <div className="p-4 border-b" style={{ borderColor: 'var(--color-primary)' }}>
-        <div className="flex items-start justify-between gap-4 mb-2">
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
-              {script.title}
-            </h1>
-            <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
-              Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
-            </p>
+      {/* Fixed Header with Controls (Director only) */}
+      {isDirector && (
+        <div 
+          className="sticky top-0 z-10 border-b p-4"
+          style={{ 
+            backgroundColor: 'var(--color-bg)',
+            borderColor: 'var(--color-primary)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                {script.title}
+              </h1>
+              <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
+                Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
+              </p>
+            </div>
+            {/* Timing Indicator */}
+            <div className="shrink-0 min-w-[200px]">
+              <TimingIndicator 
+                estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
+                isPaused={isPaused}
+              />
+            </div>
           </div>
-          {/* Timing Indicator */}
-          <div className="shrink-0 min-w-[200px]">
-            <TimingIndicator 
-              estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
-              isPaused={isPaused}
-            />
+          {/* Control Buttons */}
+          <div className="flex items-center justify-center gap-4 pt-2">
+            {!hasStarted ? (
+              <button
+                onClick={handleStart}
+                className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-bg)',
+                  borderRadius: visualTokens.borderRadius,
+                  fontFamily: visualTokens.headerFont,
+                  cursor: 'pointer',
+                }}
+                aria-label={getButtonLabel('start') || 'Start Performance'}
+              >
+                {getButtonLabel('start') || 'Start'}
+              </button>
+            ) : (
+              <>
+                {isPaused ? (
+                  <button
+                    onClick={handleResume}
+                    className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--color-primary)',
+                      color: 'var(--color-bg)',
+                      borderRadius: visualTokens.borderRadius,
+                      fontFamily: visualTokens.headerFont,
+                      cursor: 'pointer',
+                    }}
+                    aria-label={getButtonLabel('resume') || 'Resume'}
+                  >
+                    {getButtonLabel('resume') || 'Resume'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handlePause}
+                    className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--color-accent)',
+                      color: 'var(--color-bg)',
+                      borderRadius: visualTokens.borderRadius,
+                      fontFamily: visualTokens.headerFont,
+                      cursor: 'pointer',
+                    }}
+                    aria-label={getButtonLabel('pause') || 'Pause'}
+                  >
+                    {getButtonLabel('pause') || 'Pause'}
+                  </button>
+                )}
+                <button
+                  onClick={handleAdvance}
+                  disabled={!canAdvance}
+                  className="px-6 py-3 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'var(--color-bg)',
+                    borderRadius: visualTokens.borderRadius,
+                    fontFamily: visualTokens.headerFont,
+                    cursor: canAdvance ? 'pointer' : 'not-allowed',
+                  }}
+                  aria-label={getButtonLabel('advance') || 'Advance'}
+                >
+                  {getButtonLabel('advance') || 'Advance'}
+                </button>
+              </>
+            )}
+            {/* Exit Button */}
+            <button
+              onClick={() => setShowExitConfirm(true)}
+              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+              style={{
+                backgroundColor: 'var(--color-error, #ef4444)',
+                color: 'var(--color-bg)',
+                borderRadius: visualTokens.borderRadius,
+                fontFamily: visualTokens.headerFont,
+                cursor: 'pointer',
+              }}
+              aria-label={getButtonLabel('exit') || 'Exit Performance'}
+            >
+              {getButtonLabel('exit') || 'Exit'}
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Header for Actors (non-fixed) */}
+      {!isDirector && (
+        <div className="p-4 border-b" style={{ borderColor: 'var(--color-primary)' }}>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                {script.title}
+              </h1>
+              <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
+                Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
+              </p>
+            </div>
+            {/* Timing Indicator */}
+            <div className="shrink-0 min-w-[200px]">
+              <TimingIndicator 
+                estimatedDuration={5}
+                isPaused={isPaused}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Script Display */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-8"
+        className={`flex-1 overflow-y-auto p-8 ${isDirector ? '' : ''}`}
         style={{
           scrollBehavior: visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth',
         }}
@@ -253,6 +439,9 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
             const isUpcoming = upcomingLines.some((l) => l.index === index);
             const isMyLine =
               line.type === 'dialogue' && line.characterName === participant?.characterAssignment?.name;
+            
+            // Highlight all of the actor's lines (not just current)
+            const shouldHighlightMyLine = isMyLine;
 
             return (
               <div
@@ -261,18 +450,33 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                 className={`p-4 rounded transition-all relative ${
                   isCurrent
                     ? 'ring-2 scale-105'
-                    : isCompleted
-                      ? 'opacity-50'
-                      : isUpcoming
-                        ? 'opacity-75'
-                        : 'opacity-30'
+                    : shouldHighlightMyLine
+                      ? 'ring-2 ring-offset-2'
+                      : isCompleted
+                        ? 'opacity-50'
+                        : isUpcoming
+                          ? 'opacity-75'
+                          : 'opacity-30'
                 }`}
                 style={{
-                  backgroundColor: isCurrent ? 'var(--color-primary)' : 'transparent',
-                  color: isCurrent ? 'var(--color-bg)' : 'var(--color-primary)',
-                  borderColor: isCurrent ? 'var(--color-primary)' : 'transparent',
-                  borderWidth: isCurrent ? '2px' : '0',
+                  backgroundColor: isCurrent 
+                    ? 'var(--color-primary)' 
+                    : shouldHighlightMyLine
+                      ? 'var(--color-accent)'
+                      : 'transparent',
+                  color: isCurrent 
+                    ? 'var(--color-bg)' 
+                    : shouldHighlightMyLine
+                      ? 'var(--color-bg)'
+                      : 'var(--color-primary)',
+                  borderColor: isCurrent 
+                    ? 'var(--color-primary)' 
+                    : shouldHighlightMyLine
+                      ? 'var(--color-accent)'
+                      : 'transparent',
+                  borderWidth: (isCurrent || shouldHighlightMyLine) ? '2px' : '0',
                   borderStyle: 'solid',
+                  opacity: shouldHighlightMyLine && !isCompleted ? 1 : isCompleted ? 0.5 : undefined,
                 }}
               >
                 {/* Visual timing cue - pulsing indicator for current line */}
@@ -300,7 +504,11 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                     <div
                       className="font-semibold mb-2"
                       style={{
-                        color: isCurrent ? 'var(--color-bg)' : 'var(--color-accent)',
+                        color: isCurrent 
+                          ? 'var(--color-bg)' 
+                          : shouldHighlightMyLine
+                            ? 'var(--color-bg)'
+                            : 'var(--color-accent)',
                       }}
                     >
                       {line.characterName}
@@ -337,16 +545,47 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
         </div>
       </div>
 
-      {/* Advancement Controls */}
-      <div className="border-t p-4" style={{ borderColor: 'var(--color-primary)' }}>
-        <AdvanceControl
-          onAdvance={handleAdvance}
-          onPause={participant?.role === 'director' ? handlePause : undefined}
-          onResume={participant?.role === 'director' ? handleResume : undefined}
-          canAdvance={canAdvance}
-          isPaused={isPaused}
-        />
-      </div>
+      {/* Advancement Controls (Actors only - Director controls are in fixed header) */}
+      {!isDirector && (
+        <div className="border-t p-4" style={{ borderColor: 'var(--color-primary)' }}>
+          <div className="flex items-center justify-center gap-4">
+            <AdvanceControl
+              onAdvance={handleAdvance}
+              onPause={undefined}
+              onResume={undefined}
+              canAdvance={canAdvance}
+              isPaused={isPaused}
+            />
+            {/* Exit Button for Actors */}
+            <button
+              onClick={() => setShowExitConfirm(true)}
+              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+              style={{
+                backgroundColor: 'var(--color-error, #ef4444)',
+                color: 'var(--color-bg)',
+                borderRadius: visualTokens.borderRadius,
+                fontFamily: visualTokens.headerFont,
+                cursor: 'pointer',
+              }}
+              aria-label={getButtonLabel('exit') || 'Exit Performance'}
+            >
+              {getButtonLabel('exit') || 'Exit'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Exit Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        onConfirm={handleExit}
+        title="Exit Performance?"
+        message="Are you sure you want to exit the performance? This will stop the script and return you to the previous screen."
+        confirmLabel="Exit"
+        cancelLabel="Cancel"
+        variant="danger"
+      />
     </div>
   );
 }

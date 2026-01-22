@@ -7,22 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { validateSessionCodeSecurity } from '@/src/lib/utils/session-code';
-import { generateShareableLink } from '@/src/lib/utils/session-code';
-import { sessionStore, type SessionData } from './[sessionId]/route';
-import type { SessionStatus } from '@/src/state/types/session';
-import type { VibeType } from '@/src/state/types/vibe';
-import type { SessionConfiguration } from '@/src/lib/validation/session-config-schema';
-import type { Character, Script } from '@/src/state/types/session';
+import { SessionConfigurationSchema } from '@/src/lib/validation/session-config-schema';
 
 const CreateSessionSchema = z.object({
   sessionId: z.string().min(8).max(10),
   vibeContext: z.string(),
-  configuration: z.object({
-    theme: z.string(),
-    tone: z.string(),
-    participantCount: z.number(),
-    chaosLevel: z.number().optional(),
-  }),
+  configuration: SessionConfigurationSchema,
   cast: z.array(z.any()).optional(),
   script: z.any().optional(),
 });
@@ -60,60 +50,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if session already exists
-    if (sessionStore.has(sessionId)) {
+    // Proxy to PartyKit - PartyKit is the single source of truth
+    const partyKitHost = process.env.PARTYKIT_HOST || process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999';
+    const protocol = partyKitHost.includes('localhost') || partyKitHost.includes('127.0.0.1') ? 'http' : 'https';
+    const host = partyKitHost.startsWith('http') ? partyKitHost : `${protocol}://${partyKitHost}`;
+
+    try {
+      const response = await fetch(`${host}/parties/main/${sessionId}/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          vibeContext,
+          configuration,
+          cast,
+          script,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return NextResponse.json(
+          {
+            error: errorData.error || 'Failed to create session',
+            message: errorData.message,
+          },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      return NextResponse.json(data, { status: 201 });
+    } catch (error) {
+      console.error('PartyKit session creation error:', error);
       return NextResponse.json(
         {
-          error: 'Session already exists',
+          error: 'Failed to create session',
+          message: error instanceof Error ? error.message : 'Unknown error',
         },
-        { status: 409 }
+        { status: 500 }
       );
     }
-
-    // Create session data
-    const now = Date.now();
-    const expiresAt = now + 24 * 60 * 60 * 1000; // 24 hours
-
-    const session: SessionData = {
-      id: sessionId,
-      shareableLink: generateShareableLink(sessionId),
-      vibeContext: vibeContext as VibeType,
-      directorId: 'director', // Will be set properly when director joins
-      configuration: configuration as SessionConfiguration,
-      status: 'casting' as SessionStatus,
-      createdAt: now,
-      expiresAt,
-      cast: (cast || []) as Character[],
-      script: (script || null) as Script | null,
-      performanceProgress: {
-        currentLineIndex: 0,
-        currentScene: 0,
-        startedAt: null,
-        pausedAt: null,
-        completedLines: [],
-        advancementControl: {
-          lastAdvancedBy: '',
-          lastAdvancedAt: 0,
-          directorOverride: false,
-        },
-      },
-      wrapPartyData: null,
-    };
-
-    // Store session
-    sessionStore.set(sessionId, session);
-
-    return NextResponse.json(
-      {
-        session: {
-          id: session.id,
-          shareableLink: session.shareableLink,
-          vibeContext: session.vibeContext,
-          status: session.status,
-        },
-      },
-      { status: 201 }
-    );
   } catch (error) {
     console.error('Session creation error:', error);
     return NextResponse.json(

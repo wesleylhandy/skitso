@@ -98,7 +98,7 @@ type SessionStatus =
 interface SessionConfiguration {
   theme: string; // 10-200 characters
   tone: TonePreference;
-  participantCount: number; // 2-10
+  participantCount: number; // 2-5 (MVP cost cap)
   chaosLevel: number; // 1-10
   directorDefinedCharacters?: Character[]; // Optional pre-defined characters
 }
@@ -115,7 +115,7 @@ type TonePreference =
 **Validation Rules:**
 - Session ID: 8-10 alphanumeric characters, cryptographically secure
 - Theme: 10-200 characters, non-empty
-- Participant count: 2-10 inclusive
+- Participant count: 2-5 inclusive (MVP)
 - Chaos level: 1-10 inclusive
 - Expiration: Must be 24 hours after creation
 
@@ -455,7 +455,7 @@ export const VibeTypeSchema = z.enum([
 export const SessionConfigurationSchema = z.object({
   theme: z.string().min(10).max(200),
   tone: z.enum(['comedic', 'dramatic', 'satirical', 'absurd', 'serious', 'romantic']),
-  participantCount: z.number().int().min(2).max(10),
+  participantCount: z.number().int().min(2).max(5),
   chaosLevel: z.number().int().min(1).max(10),
   directorDefinedCharacters: z.array(CharacterSchema).optional()
 });

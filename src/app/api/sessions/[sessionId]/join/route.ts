@@ -7,8 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSession, sessionStore, type SessionData } from '../route';
-import type { Participant, Character } from '@/src/state/types/session';
 
 const JoinRequestSchema = z.object({
   name: z.string().min(1).max(50),
@@ -20,33 +18,12 @@ const JoinRequestSchema = z.object({
 });
 
 /**
- * Generates a unique participant ID
+ * Get PartyKit host URL
  */
-function generateParticipantId(): string {
-  return `participant-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-/**
- * Assigns an available character to a participant
- * Returns the assigned character or null if none available
- */
-function assignCharacter(session: SessionData, participantId: string): Character | null {
-  // Find first unassigned character
-  const unassignedChar = session.cast.find(
-    (char) => char.participantId === null
-  );
-
-  if (!unassignedChar) {
-    return null;
-  }
-
-  // Assign character to participant
-  unassignedChar.participantId = participantId;
-
-  // Update session in store
-  sessionStore.set(session.id, session);
-
-  return unassignedChar;
+function getPartyKitHost(): string {
+  const partyKitHost = process.env.PARTYKIT_HOST || process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999';
+  const protocol = partyKitHost.includes('localhost') || partyKitHost.includes('127.0.0.1') ? 'http' : 'https';
+  return partyKitHost.startsWith('http') ? partyKitHost : `${protocol}://${partyKitHost}`;
 }
 
 /**
@@ -60,28 +37,6 @@ export async function POST(
 ) {
   try {
     const { sessionId } = await params;
-
-    // Validate session exists
-    const session = getSession(sessionId);
-    if (!session) {
-      return NextResponse.json(
-        {
-          error: 'Session not found',
-        },
-        { status: 404 }
-      );
-    }
-
-    // Check if session is expired
-    const now = Date.now();
-    if (now > session.expiresAt || session.status === 'expired') {
-      return NextResponse.json(
-        {
-          error: 'Session expired',
-        },
-        { status: 410 }
-      );
-    }
 
     // Parse and validate request body
     const body = await request.json();
@@ -99,36 +54,45 @@ export async function POST(
 
     const { name, deviceInfo } = validated.data;
 
-    // Generate participant ID
-    const participantId = generateParticipantId();
+    // Proxy to PartyKit - PartyKit handles session validation and character assignment
+    const host = getPartyKitHost();
 
-    // Assign character if available
-    const characterAssignment = assignCharacter(session, participantId);
-
-    // Create participant record
-    const participant: Participant = {
-      id: participantId,
-      sessionId: session.id,
-      role: 'actor', // Director is set when session is created
-      name,
-      characterAssignment,
-      connectionStatus: 'connected',
-      joinedAt: now,
-      deviceInfo,
-    };
-
-    // Return participant data
-    return NextResponse.json(
-      {
-        participant,
-        session: {
-          id: session.id,
-          vibeContext: session.vibeContext,
-          status: session.status,
+    try {
+      const response = await fetch(`${host}/parties/main/${sessionId}/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      },
-      { status: 200 }
-    );
+        body: JSON.stringify({
+          sessionId,
+          name,
+          deviceInfo,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return NextResponse.json(
+          {
+            error: errorData.error || 'Failed to join session',
+            message: errorData.message,
+          },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      return NextResponse.json(data, { status: 200 });
+    } catch (error) {
+      console.error('PartyKit session join error:', error);
+      return NextResponse.json(
+        {
+          error: 'Failed to join session',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Session join error:', error);
     return NextResponse.json(

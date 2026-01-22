@@ -36,18 +36,30 @@ interface JoinResponse {
   };
 }
 
-export function SessionJoinForm() {
+interface SessionJoinFormProps {
+  initialSessionCode?: string;
+}
+
+export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
   const router = useRouter();
   const [, setParticipant] = useAtom(participantAtom);
   const [, setVibe] = useAtom(vibeAtom);
-  const [, setSessionCode] = useAtom(sessionCodeAtom);
+  const [sessionCodeFromAtom, setSessionCode] = useAtom(sessionCodeAtom);
 
-  const [sessionCode, setSessionCodeInput] = useState('');
+  // Prefill session code from prop or atom
+  const [sessionCode, setSessionCodeInput] = useState(initialSessionCode || sessionCodeFromAtom || '');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [joined, setJoined] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusType>('disconnected');
+
+  // Update session code input when atom changes (e.g., from URL)
+  useEffect(() => {
+    if (sessionCodeFromAtom && !sessionCode) {
+      setSessionCodeInput(sessionCodeFromAtom);
+    }
+  }, [sessionCodeFromAtom, sessionCode]);
 
   // Cleanup PartyKit connection on unmount
   useEffect(() => {
@@ -131,6 +143,7 @@ export function SessionJoinForm() {
         // Join session room (actor role)
         joinSession(sessionCode, joinData.participant.id, {
           role: 'actor',
+          name: joinData.participant.name,
         });
 
         // Initial status check and periodic updates
@@ -144,11 +157,16 @@ export function SessionJoinForm() {
         setConnectionStatus('disconnected');
       }
 
-      // Navigate to casting couch or character display after a brief delay
-      // to allow connection status to be visible
-      setTimeout(() => {
-        router.push(`/join/${sessionCode}`);
-      }, 1000);
+      // Don't redirect if already on the join page - just refresh to show character
+      // The join/[sessionCode]/page.tsx will handle showing the character card
+      // if participant.characterAssignment exists
+      if (joinData.participant.characterAssignment) {
+        // Character was assigned, page will automatically show it
+        // No redirect needed - we're already on the join page
+      } else {
+        // No character assigned yet, stay on page
+        // The page will update when character is assigned
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join session');
     } finally {
@@ -166,11 +184,13 @@ export function SessionJoinForm() {
           id="sessionCode"
           type="text"
           value={sessionCode}
-          onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+          onChange={(e) => setSessionCodeInput(e.target.value)}
+          onBlur={(e) => setSessionCodeInput(e.target.value.toUpperCase().trim())}
           placeholder="Enter session code"
-          className="w-full px-4 py-2 border rounded-md"
+          className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           disabled={loading}
           aria-label="Session code"
+          autoComplete="off"
         />
       </div>
 
@@ -184,14 +204,18 @@ export function SessionJoinForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Enter your name"
-          className="w-full px-4 py-2 border rounded-md"
+          className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           disabled={loading}
           aria-label="Your name"
           required
         />
       </div>
 
-      {error && <ErrorMessage message={error} />}
+      {error && (
+        <div className="mt-2">
+          <ErrorMessage message={error} />
+        </div>
+      )}
 
       {joined && (
         <div className="mt-4 p-4 border rounded-md bg-muted/50">
@@ -200,7 +224,7 @@ export function SessionJoinForm() {
             <ConnectionStatus status={connectionStatus} />
           </div>
           <p className="text-sm text-muted-foreground">
-            {connectionStatus === 'connected' && 'Connected to session. Redirecting...'}
+            {connectionStatus === 'connected' && 'Successfully joined session!'}
             {connectionStatus === 'reconnecting' && 'Reconnecting to session...'}
             {connectionStatus === 'disconnected' && 'Connecting to session...'}
           </p>
@@ -210,7 +234,7 @@ export function SessionJoinForm() {
       <button
         type="submit"
         disabled={loading || joined}
-        className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md disabled:opacity-50"
+        className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-md font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 active:bg-primary/80 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
       >
         {loading ? 'Joining...' : joined ? 'Joined' : 'Join Session'}
       </button>

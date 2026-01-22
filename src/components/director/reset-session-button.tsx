@@ -7,6 +7,7 @@
 
 'use client';
 
+import { useState } from 'react';
 import { useSetAtom } from 'jotai';
 import { useVibe } from '@/src/lib/hooks/use-vibe';
 import { sessionStateAtom } from '@/src/state/atoms/session-state-atom';
@@ -16,7 +17,7 @@ import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { participantAtom } from '@/src/state/atoms/participant-atom';
 import { performanceProgressAtom } from '@/src/state/atoms/performance-atom';
 import { wrapPartyDataAtom } from '@/src/state/atoms/wrap-party-atom';
-import { leaveSession } from '@/src/lib/partykit/client';
+import { ConfirmationModal } from '@/src/components/ui/confirmation-modal';
 
 interface ResetSessionButtonProps {
   variant?: 'primary' | 'secondary' | 'danger';
@@ -30,6 +31,7 @@ interface ResetSessionButtonProps {
  * Preserves user preferences (vibe, chaos level).
  */
 export function ResetSessionButton({ variant = 'secondary', className = '' }: ResetSessionButtonProps) {
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const setSessionState = useSetAtom(sessionStateAtom);
   const setSessionCode = useSetAtom(sessionCodeAtom);
   const setCast = useSetAtom(castAtom);
@@ -39,11 +41,11 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
   const setWrapPartyData = useSetAtom(wrapPartyDataAtom);
   const { getButtonLabel, visualTokens } = useVibe();
 
+  const handleResetClick = () => {
+    setShowConfirmModal(true);
+  };
+
   const handleReset = () => {
-    // Confirm with user
-    if (!confirm('Are you sure you want to start a new session? This will clear all current session data.')) {
-      return;
-    }
 
     // Leave PartyKit session if connected
     try {
@@ -101,16 +103,28 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
   const style = buttonStyles[variant];
 
   return (
-    <button
-      type="button"
-      onClick={handleReset}
-      className={`px-4 py-2 rounded font-medium ${variant === 'secondary' ? 'border' : ''} ${className}`}
-      style={{
-        ...style,
-        fontFamily: visualTokens.headerFont,
-      }}
-    >
-      Start New Session
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={handleResetClick}
+        className={`px-4 py-2 rounded font-medium ${variant === 'secondary' ? 'border' : ''} ${className}`}
+        style={{
+          ...style,
+          fontFamily: visualTokens.headerFont,
+        }}
+      >
+        Start New Session
+      </button>
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleReset}
+        title="Start New Session?"
+        message="Are you sure you want to start a new session? This will clear all current session data."
+        confirmLabel="Start New Session"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+    </>
   );
 }

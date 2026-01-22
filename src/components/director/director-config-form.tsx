@@ -24,6 +24,7 @@ import type { Script } from '@/src/state/types/session';
 import type { VibeType } from '@/src/state/types/vibe';
 import { vibeAtom } from '@/src/state/atoms/vibe-atom';
 import { clearSessionState } from '@/src/lib/utils/session-state-cleanup';
+import { updateSessionState, initializePartyKitClient, updateCast, updateScript } from '@/src/lib/partykit/client';
 
 export function DirectorConfigForm() {
   const vibe = useAtomValue(vibeAtom);
@@ -40,6 +41,7 @@ export function DirectorConfigForm() {
   const [script, setScript] = useAtom(currentScriptAtom);
   const [chaosLevel, setChaosLevel] = useAtom(chaosLevelAtom);
   const setParticipant = useSetAtom(participantAtom);
+  const participant = useAtomValue(participantAtom);
 
   const [theme, setTheme] = useState('');
   const [plot, setPlot] = useState('');
@@ -55,6 +57,7 @@ export function DirectorConfigForm() {
     script: { completed: false, progress: 0 },
     images: { completed: false, progress: 0, completedCount: 0, totalCount: 0 },
   });
+  const [generationAbortController, setGenerationAbortController] = useState<AbortController | null>(null);
 
   /**
    * Generate images for all characters in parallel
@@ -64,7 +67,8 @@ export function DirectorConfigForm() {
   const generateCharacterImages = async (
     characters: Character[],
     vibeContext: VibeType,
-    onProgress?: (completed: number, total: number) => void
+    onProgress?: (completed: number, total: number) => void,
+    abortSignal?: AbortSignal
   ) => {
     const totalCount = characters.length;
     let completedCount = 0;
@@ -89,6 +93,7 @@ export function DirectorConfigForm() {
             vibeContext,
             optionalImagePrompt: character.visualRepresentation.imagePrompt,
           }),
+          signal: abortSignal,
         });
 
         if (!response.ok) {
@@ -99,8 +104,10 @@ export function DirectorConfigForm() {
         
         // Update the character with the image URL
         if (imageData.imageUrl) {
-          setCast((currentCast) =>
-            currentCast.map((c) =>
+          let updatedCast: Character[] | null = null;
+          
+          setCast((currentCast) => {
+            updatedCast = currentCast.map((c) =>
               c.id === character.id
                 ? {
                     ...c,
@@ -110,8 +117,21 @@ export function DirectorConfigForm() {
                     },
                   }
                 : c
-            )
-          );
+            );
+            return updatedCast;
+          });
+          
+          // Sync updated cast to PartyKit after each image (deferred to avoid cascading renders)
+          if (sessionCode && updatedCast) {
+            // Defer sync to avoid synchronous setState in effect
+            Promise.resolve().then(() => {
+              try {
+                updateCast(sessionCode, updatedCast!);
+              } catch (error) {
+                console.error('Failed to sync cast after image generation:', error);
+              }
+            });
+          }
         }
 
         // Update progress
@@ -129,11 +149,31 @@ export function DirectorConfigForm() {
     await Promise.allSettled(imagePromises);
   };
 
+  const handleCancelGeneration = () => {
+    if (generationAbortController) {
+      generationAbortController.abort();
+      setGenerationAbortController(null);
+    }
+    setLoading(false);
+    setLoadingStep('idle');
+    setError('Generation cancelled');
+    setGenerationProgress({
+      characters: { completed: false, progress: 0 },
+      script: { completed: false, progress: 0 },
+      images: { completed: false, progress: 0, completedCount: 0, totalCount: 0 },
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     setLoadingStep('characters');
+    
+    // Create abort controller for cancellation
+    const abortController = new AbortController();
+    setGenerationAbortController(abortController);
+    
     // Reset progress state
     setGenerationProgress({
       characters: { completed: false, progress: 0 },
@@ -173,6 +213,8 @@ export function DirectorConfigForm() {
         role: 'director',
         name: 'Director',
         characterAssignment: null,
+        assignmentStatus: 'none',
+        requestedCharacterId: null,
         connectionStatus: 'disconnected',
         joinedAt: Date.now(),
         deviceInfo: {
@@ -181,6 +223,41 @@ export function DirectorConfigForm() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
       });
+
+      // Create session in PartyKit BEFORE generation starts
+      // This ensures the session exists for participants trying to join during generation
+      if (sessionCode) {
+        try {
+          const createSessionResponse = await fetch('/api/sessions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: sessionCode,
+              vibeContext: vibe,
+              configuration: validated.data,
+              // Cast and script will be added later after generation
+            }),
+          });
+
+          if (!createSessionResponse.ok) {
+            const errorData = await createSessionResponse.json();
+            // If session already exists (409), that's fine - continue
+            if (createSessionResponse.status === 409) {
+              console.log('Session already exists in PartyKit:', sessionCode);
+            } else {
+              console.warn('Failed to create session before generation:', errorData.error);
+            }
+            // Continue anyway - session might already exist or will be created later
+          } else {
+            console.log('Session created in PartyKit before generation:', sessionCode);
+          }
+        } catch (error) {
+          console.error('Error creating session before generation:', error);
+          // Continue anyway - session creation will be retried after generation
+        }
+      }
 
       // Parse jokes (one per line, filter empty)
       const jokesArray = jokes
@@ -206,6 +283,7 @@ export function DirectorConfigForm() {
           tone,
           directorDefinedCharacters: validDirectorDefinedCharacters.length > 0 ? validDirectorDefinedCharacters : undefined,
         }),
+        signal: abortController.signal,
       });
 
       if (!charactersResponse.ok) {
@@ -225,6 +303,7 @@ export function DirectorConfigForm() {
         id: `char-${index}`,
         sessionId: sessionCode || '',
         participantId: null,
+        isLocked: false,
         name: char.name,
         archetypeLabel: char.archetypeLabel,
         personalityTraits: char.personalityTraits,
@@ -238,6 +317,22 @@ export function DirectorConfigForm() {
       }));
 
       setCast(characters);
+      
+      // Check if cancelled before syncing
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
+      // Immediately sync cast to PartyKit
+      if (sessionCode) {
+        try {
+          updateCast(sessionCode, characters);
+          console.log('Cast synced to PartyKit immediately after generation:', { sessionCode, castLength: characters.length });
+        } catch (error) {
+          console.error('Failed to sync cast to PartyKit:', error);
+          // Don't fail generation, but log error
+        }
+      }
       
       // Update progress: characters completed
       setGenerationProgress({
@@ -273,6 +368,7 @@ export function DirectorConfigForm() {
                 plot: plot.trim() || undefined,
                 jokes: jokesArray.length > 0 ? jokesArray : undefined,
               }),
+              signal: abortController.signal,
             });
 
             if (!scriptResponse.ok) {
@@ -294,6 +390,18 @@ export function DirectorConfigForm() {
             };
 
             setScript(script);
+            
+            // Immediately sync script to PartyKit
+            if (sessionCode) {
+              try {
+                updateScript(sessionCode, script);
+                console.log('Script synced to PartyKit immediately after generation:', { sessionCode });
+              } catch (error) {
+                console.error('Failed to sync script to PartyKit:', error);
+                // Don't fail generation, but log error
+              }
+            }
+            
             setGenerationProgress((prev) => ({
               ...prev,
               script: { completed: true, progress: 100 },
@@ -324,8 +432,17 @@ export function DirectorConfigForm() {
         }),
       ]);
 
+      // Check if cancelled
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       // Check if script generation failed
       if (scriptResult.status === 'rejected') {
+        // Don't throw if it was aborted
+        if (scriptResult.reason instanceof Error && scriptResult.reason.name === 'AbortError') {
+          return;
+        }
         throw scriptResult.reason;
       }
 
@@ -343,37 +460,115 @@ export function DirectorConfigForm() {
         images: { ...prev.images, completed: true, progress: 100 },
       }));
       
-      // Create session in API route store
-      const createSessionResponse = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sessionId: sessionCode,
-          vibeContext: vibe,
-          configuration: validated.data,
-          cast: characters,
-          script,
-        }),
-      });
+      // Update session in PartyKit with cast and script
+      // Session was already created before generation, now we're updating it with the generated content
+      if (sessionCode) {
+        try {
+          const updateSessionResponse = await fetch('/api/sessions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: sessionCode,
+              vibeContext: vibe,
+              configuration: validated.data,
+              cast: characters,
+              script,
+            }),
+          });
 
-      if (!createSessionResponse.ok) {
-        const errorData = await createSessionResponse.json();
-        // Log error but don't fail the form submission since session exists in socket store
-        console.warn('Failed to create session in API store:', errorData.error);
+          if (!updateSessionResponse.ok) {
+            const errorData = await updateSessionResponse.json();
+            // If session doesn't exist, try creating it (shouldn't happen, but handle gracefully)
+            if (errorData.error === 'Session not found' || updateSessionResponse.status === 404) {
+              console.warn('Session not found during update, this should not happen:', errorData.error);
+            } else {
+              console.warn('Failed to update session with cast and script:', errorData.error);
+            }
+          } else {
+            console.log('Session updated with cast and script:', sessionCode);
+          }
+        } catch (error) {
+          console.error('Error updating session with cast and script:', error);
+          // Don't fail the form submission
+        }
+      }
+
+      // Explicitly send cast to PartyKit to ensure it's stored
+      // This is critical because character assignment needs the cast in storage
+      if (sessionCode) {
+        try {
+          updateCast(sessionCode, characters);
+          console.log('Cast sent to PartyKit after generation:', { sessionCode, castLength: characters.length });
+        } catch (error) {
+          console.error('Failed to send cast to PartyKit:', error);
+          // Don't fail the form submission, but log the error
+        }
+      }
+
+      // Initialize PartyKit room immediately after session creation
+      // This ensures the room exists before participants try to join (prevents 404 race condition)
+      if (sessionCode) {
+        try {
+          const client = initializePartyKitClient(sessionCode);
+          
+          // Wait for connection to ensure room is initialized
+          if (client.readyState !== WebSocket.OPEN) {
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('PartyKit initialization timeout'));
+              }, 5000);
+              
+              const onOpen = () => {
+                clearTimeout(timeout);
+                client.removeEventListener('open', onOpen);
+                client.removeEventListener('error', onError);
+                resolve();
+              };
+              
+              const onError = () => {
+                clearTimeout(timeout);
+                client.removeEventListener('open', onOpen);
+                client.removeEventListener('error', onError);
+                reject(new Error('PartyKit initialization failed'));
+              };
+              
+              client.addEventListener('open', onOpen, { once: true });
+              client.addEventListener('error', onError, { once: true });
+            });
+          }
+          
+          // Join as director to initialize the room
+          // The director-desk page will handle the actual join when it loads
+          // Just initializing the connection is enough to create the room
+        } catch (error) {
+          // Log but don't fail - room will be created when director-desk page loads
+          console.warn('Failed to initialize PartyKit room immediately:', error);
+        }
       }
 
       // Brief delay to show 100% completion before hiding
       await new Promise(resolve => setTimeout(resolve, 300));
       
+      // Update session state locally and through PartyKit
       setSessionState('casting');
+      if (sessionCode) {
+        updateSessionState(sessionCode, 'casting');
+      }
       setLoading(false);
       setLoadingStep('idle');
+      setGenerationAbortController(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      // Check if error is due to abort
+      if (err instanceof Error && err.name === 'AbortError') {
+        setError('Generation cancelled');
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      }
       setLoading(false);
       setLoadingStep('idle');
+      setGenerationAbortController(null);
     }
   };
 
@@ -400,11 +595,24 @@ export function DirectorConfigForm() {
           <div className="flex items-center gap-4 mb-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>
             <div className="flex-1">
-              <h3 className="font-semibold text-lg">
-                {loadingStep === 'characters' 
-                  ? 'Generating Characters...' 
-                  : 'Generating Content...'}
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg">
+                  {loadingStep === 'characters' 
+                    ? 'Generating Characters...' 
+                    : 'Generating Content...'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleCancelGeneration}
+                  className="px-4 py-2 rounded font-semibold transition-opacity hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--color-error, #ef4444)',
+                    color: 'var(--color-bg)',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
               <p className="text-sm text-gray-500 mt-1">
                 {loadingStep === 'characters' 
                   ? 'Creating unique characters with personalities and motivations...'
@@ -593,7 +801,7 @@ export function DirectorConfigForm() {
           type="range"
           id="participantCount"
           min={2}
-          max={10}
+          max={5}
           value={participantCount}
           onChange={(e) => setParticipantCount(Number(e.target.value))}
           className="w-full"
@@ -662,6 +870,7 @@ export function DirectorConfigForm() {
                   setDirectorDefinedCharacters(updated);
                 }}
                 placeholder="Character name"
+                maxLength={50}
                 className="flex-1 p-2 border rounded focus:outline-none focus:ring-2"
                 style={{
                   backgroundColor: 'var(--color-bg)',
@@ -686,6 +895,7 @@ export function DirectorConfigForm() {
                   setDirectorDefinedCharacters(updated);
                 }}
                 placeholder="Role (optional)"
+                maxLength={50}
                 className="flex-1 p-2 border rounded focus:outline-none focus:ring-2"
                 style={{
                   backgroundColor: 'var(--color-bg)',
