@@ -14,7 +14,7 @@ Follow-up TODOs: None
 
 # Skitso Project Constitution
 
-**Version:** 1.0.0  
+**Version:** 1.0.1  
 **Ratification Date:** 2025-01-27  
 **Last Amended:** 2025-01-27
 
@@ -152,7 +152,7 @@ This constitution establishes the foundational principles, technical standards, 
 - **Framework:** Next.js 16+ (App Router) deployed on Vercel
 - **Styling:** Tailwind CSS v4 with CSS Variables for theming
 - **State Management:** Jotai with `atomWithStorage` for persistence
-- **AI Engine:** OpenAI API (GPT-4o for scripts/archetypes, DALL-E 3 for character art)
+- **AI Engine:** OpenAI API (GPT-4o for scripts/archetypes, gpt-image-1.5 for character art)
 - **Database/ORM (Post-MVP):** PostgreSQL with Prisma (schema migration ready)
 - **Type Safety:** TypeScript 5+ with strict mode
 
@@ -190,6 +190,7 @@ VibeContext MUST support at minimum:
 - `INDIE_A24`: Cinematic, artistic, nuanced dialogue
 - `SITCOM_STUDIO`: Classic TV comedy timing and structure
 - `BRAINROT_THEATER`: Absurdist, meme-heavy, chaotic energy
+- `QUIET_STUDIO`: Professional minimalist, anti-cringe, clean productivity tool
 
 ---
 
@@ -214,6 +215,7 @@ VibeContext MUST support at minimum:
 
 ### Version History
 
+- **1.0.1** (2025-01-27): Added QUIET_STUDIO to VibeContext types (constitution alignment fix)
 - **1.0.0** (2025-01-27): Initial constitution ratification
 
 ---

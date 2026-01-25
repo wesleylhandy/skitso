@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Logo Animation Keyframes */
+@keyframes glitch {
+  0%, 100% {
+    transform: translate(0);
+    filter: hue-rotate(0deg);
+  }
+  10% {
+    transform: translate(-3px, 3px);
+    filter: hue-rotate(90deg);
+  }
+  20% {
+    transform: translate(3px, -3px);
+    filter: hue-rotate(180deg);
+  }
+  30% {
+    transform: translate(-2px, 2px);
+    filter: hue-rotate(270deg);
+  }
+  40% {
+    transform: translate(2px, -2px);
+    filter: hue-rotate(360deg);
+  }
+  50% {
+    transform: translate(-1px, 1px);
+    filter: hue-rotate(180deg);
+  }
+  60% {
+    transform: translate(1px, -1px);
+    filter: hue-rotate(90deg);
+  }
+  70% {
+    transform: translate(-2px, 2px);
+    filter: hue-rotate(270deg);
+  }
+  80% {
+    transform: translate(2px, -2px);
+    filter: hue-rotate(360deg);
+  }
+  90% {
+    transform: translate(-1px, 1px);
+    filter: hue-rotate(180deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes scanlines {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 4px;
+  }
+}
+
+/* Teleprompter current-line timing indicator */
+.teleprompter-current-line-indicator {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Respect reduced motion preferences from OS and ThemeProvider */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  .logo-pulse,
+  .glitch-active,
+  .teleprompter-current-line-indicator {
+    animation: none !important;
+  }
+}
+
+html[data-reduced-motion='reduce'] {
+  scroll-behavior: auto !important;
+}
+
+html[data-reduced-motion='reduce'] .logo-pulse,
+html[data-reduced-motion='reduce'] .glitch-active,
+html[data-reduced-motion='reduce'] .teleprompter-current-line-indicator {
+  animation: none !important;
+}
+
+/* Logo animation classes */
+.logo-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.glitch-active {
+  animation: glitch 0.4s ease-in-out !important;
+}
+
+/* VIRAL_NEON Vibe CSS Variables */
+[data-theme='VIRAL_NEON'] {
+  --color-bg: #0A0A0A;
+  --color-primary: #8AFB17;
+  --color-accent: #BF40BF;
+  --color-text: #FFFFFF;
+  --color-text-secondary: #8AFB17;
+  --font-header: 'Inter Black Italic', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --border-radius: 4px;
+  --animation-style: snappy;
+  --animation-speed: 200ms;
+  /* Layout patterns */
+  --card-padding: 1.5rem;
+  --card-gap: 1rem;
+  --card-border: 2px solid var(--color-primary);
+  --card-shadow: 0 0 20px rgba(138, 251, 23, 0.3);
+  --spacing-section: 3rem;
+  --spacing-component: 2rem;
+  --spacing-element: 1rem;
+}
+
+/* INDIE_A24 Vibe CSS Variables */
+[data-theme='INDIE_A24'] {
+  --color-bg: #141414;
+  --color-primary: #CC7722;
+  --color-accent: #FFFFFF;
+  --color-text: #FFFFFF;
+  --color-text-secondary: #CC7722;
+  --font-header: 'EB Garamond', serif;
+  --font-body: 'Roboto Mono', monospace;
+  --border-radius: 0px;
+  --animation-style: slow-fade;
+  --animation-speed: 500ms;
+  /* Layout patterns */
+  --card-padding: 2rem;
+  --card-gap: 1.5rem;
+  --card-border: 1px solid rgba(204, 119, 34, 0.3);
+  --card-shadow: none;
+  --spacing-section: 4rem;
+  --spacing-component: 2.5rem;
+  --spacing-element: 1.25rem;
+}
+
+/* SITCOM_STUDIO Vibe CSS Variables */
+[data-theme='SITCOM_STUDIO'] {
+  --color-bg: #F5F5F5;
+  --color-primary: #FF6B35;
+  --color-accent: #004E89;
+  --color-text: #000000;
+  --color-text-secondary: #FF6B35;
+  --font-header: 'Comic Sans MS', cursive;
+  --font-body: 'Arial', sans-serif;
+  --border-radius: 12px;
+  --animation-style: bouncy;
+  --animation-speed: 300ms;
+  /* Layout patterns */
+  --card-padding: 1.5rem;
+  --card-gap: 1rem;
+  --card-border: 3px solid var(--color-primary);
+  --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --spacing-section: 2.5rem;
+  --spacing-component: 1.5rem;
+  --spacing-element: 0.75rem;
+}
+
+/* BRAINROT_THEATER Vibe CSS Variables */
+[data-theme='BRAINROT_THEATER'] {
+  --color-bg: #000000;
+  --color-primary: #FF00FF;
+  --color-accent: #00FFFF;
+  --color-text: #FFFFFF;
+  --color-text-secondary: #FF00FF;
+  --font-header: 'Impact', sans-serif;
+  --font-body: 'Arial Black', sans-serif;
+  --border-radius: 20px;
+  --animation-style: bouncy;
+  --animation-speed: 100ms;
+  /* Layout patterns */
+  --card-padding: 2rem;
+  --card-gap: 1.5rem;
+  --card-border: 4px dashed var(--color-primary);
+  --card-shadow: 0 0 30px rgba(255, 0, 255, 0.5), 0 0 60px rgba(0, 255, 255, 0.3);
+  --spacing-section: 2rem;
+  --spacing-component: 1.5rem;
+  --spacing-element: 1rem;
+}
+
+/* QUIET_STUDIO Vibe CSS Variables */
+[data-theme='QUIET_STUDIO'] {
+  --color-bg: #FFFFFF;
+  --color-primary: #2C3E50;
+  --color-accent: #7F8C8D;
+  --color-text: #2C3E50;
+  --color-text-secondary: #7F8C8D;
+  --font-header: 'Helvetica Neue', sans-serif;
+  --font-body: 'Helvetica Neue', sans-serif;
+  --border-radius: 2px;
+  --animation-style: instant;
+  --animation-speed: 0ms;
+  /* Layout patterns */
+  --card-padding: 1.25rem;
+  --card-gap: 0.75rem;
+  --card-border: 1px solid #E0E0E0;
+  --card-shadow: none;
+  --spacing-section: 2rem;
+  --spacing-component: 1rem;
+  --spacing-element: 0.5rem;
+}
+
+/* Placeholder text styling */
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-placeholder, #9CA3AF);
+  opacity: 1;
+}
+
+/* Default body styles - will be overridden by theme */
+body {
+  background: var(--color-bg, #ffffff);
+  color: var(--color-text, #171717);
+  font-family: var(--font-body, Arial, Helvetica, sans-serif);
+  transition: background-color 100ms ease, color 100ms ease;
+}
