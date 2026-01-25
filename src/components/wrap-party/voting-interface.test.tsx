@@ -174,6 +174,39 @@ describe('VotingInterface', () => {
     });
   });
 
+  it('shows vibe-specific top indicator for leading vote-getter in each category', async () => {
+    store.set(wrapPartyDataAtom, {
+      sessionId: 'session-1',
+      votes: [
+        { id: 'v1', participantId: 'p1', category: 'overall_quality', targetId: 'overall', value: 5, createdAt: Date.now() },
+        { id: 'v2', participantId: 'p2', category: 'overall_quality', targetId: 'overall', value: 5, createdAt: Date.now() },
+        { id: 'v3', participantId: 'p3', category: 'best_actor', targetId: 'char-1', value: 1, createdAt: Date.now() },
+        { id: 'v4', participantId: 'p4', category: 'best_actor', targetId: 'char-1', value: 1, createdAt: Date.now() },
+        { id: 'v5', participantId: 'p5', category: 'best_actor', targetId: 'char-2', value: 1, createdAt: Date.now() },
+      ],
+      awards: [],
+      feedback: [],
+      sharedLinks: [],
+      createdAt: Date.now(),
+    });
+
+    render(<VotingInterface />);
+
+    await waitFor(() => {
+      const topIndicators = screen.getAllByRole('img', { name: /top vote/i });
+      expect(topIndicators.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows Rejoin to vote when sessionCode present but no participant', () => {
+    store.set(participantAtom, null);
+    render(<VotingInterface sessionCode="SESSION-X" />);
+    expect(screen.getByText(/rejoin with your name to vote/i)).toBeInTheDocument();
+    const joinLink = screen.getByRole('link', { name: /hop in/i });
+    expect(joinLink).toBeInTheDocument();
+    expect(joinLink).toHaveAttribute('href', '/join/SESSION-X');
+  });
+
   it('should prevent duplicate votes in same category', async () => {
     render(<VotingInterface />);
     

@@ -8,6 +8,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAtom, useAtomValue } from 'jotai';
 import { useVibe } from '@/src/lib/hooks/use-vibe';
 import { wrapPartyDataAtom } from '@/src/state/atoms/wrap-party-atom';
@@ -25,19 +26,26 @@ import type { Vote, VoteCategory, Character } from '@/src/state/types/session';
 
 interface VotingInterfaceProps {
   onVoteSubmitted?: (vote: Vote) => void;
+  /** Session code from URL (wrap party page). Avoids atom sync delay. */
+  sessionCode?: string | null;
 }
 
 /**
  * VotingInterface Component
- * 
+ *
  * Provides voting interface for wrap party with real-time synchronization.
+ * When we have sessionCode but no participant (e.g. new tab, refresh), show
+ * "Rejoin to vote" instead of "unavailable" — we're in the session, just not identified.
  */
-export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
-  const { visualTokens, getSectionTitle, getErrorMessage } = useVibe();
+export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode }: VotingInterfaceProps) {
+  const { visualTokens, getSectionTitle, getErrorMessage, getButtonLabel } = useVibe();
+  const topIndicator = getSectionTitle('wrapPartyTopIndicator');
   const participant = useAtomValue(participantAtom);
-  const sessionCode = useAtomValue(sessionCodeAtom);
+  const atomSessionCode = useAtomValue(sessionCodeAtom);
   const cast = useAtomValue(castAtom);
   const [wrapPartyData, setWrapPartyData] = useAtom(wrapPartyDataAtom);
+
+  const sessionCode = propSessionCode ?? atomSessionCode;
 
   const [selectedQuality, setSelectedQuality] = useState<number | null>(null);
   const [selectedBestActor, setSelectedBestActor] = useState<string | null>(null);
@@ -213,12 +221,29 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
     return { count, average: 0, distribution };
   };
 
+  /** Keys with the highest vote count; ties all included. */
+  const getTopKeys = (distribution: Record<string | number, number>): (string | number)[] => {
+    const entries = Object.entries(distribution).filter(([, c]) => c > 0) as [string, number][];
+    if (entries.length === 0) return [];
+    const max = Math.max(...entries.map(([, c]) => c));
+    return entries
+      .filter(([, c]) => c === max)
+      .map(([k]) => {
+        const n = Number(k);
+        return Number.isNaN(n) ? k : n;
+      });
+  };
+
   const qualityResults = getVoteResults('overall_quality');
   const bestActorResults = getVoteResults('best_actor');
   const favoriteMomentResults = getVoteResults('favorite_moment');
   const funniestMomentResults = getVoteResults('funniest_moment');
 
-  if (!participant || !sessionCode) {
+  const bestActorTopKeys = getTopKeys(bestActorResults.distribution);
+  const favoriteTopKeys = getTopKeys(favoriteMomentResults.distribution);
+  const funniestTopKeys = getTopKeys(funniestMomentResults.distribution);
+
+  if (!sessionCode) {
     return (
       <div className="voting-interface" style={{ color: visualTokens.primaryColor }}>
         <h2 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
@@ -227,6 +252,37 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
         <p style={{ fontFamily: visualTokens.bodyFont }}>
           {getErrorMessage('wrapPartyUnavailable')}
         </p>
+      </div>
+    );
+  }
+
+  if (!participant) {
+    return (
+      <div className="voting-interface" style={{ color: visualTokens.primaryColor }}>
+        <h2 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+          {getSectionTitle('wrapParty')}
+        </h2>
+        <p style={{ fontFamily: visualTokens.bodyFont, marginBottom: '1rem' }}>
+          {getSectionTitle('wrapPartyRejoinToVote')}
+        </p>
+        <Link
+          href={`/join/${sessionCode}`}
+          style={{
+            display: 'inline-block',
+            fontFamily: visualTokens.bodyFont,
+            padding: '0.5rem 1rem',
+            borderRadius: visualTokens.borderRadius,
+            border: `2px solid ${visualTokens.primaryColor}`,
+            color: visualTokens.primaryColor,
+            backgroundColor: 'transparent',
+            textDecoration: 'none',
+            minWidth: '44px',
+            minHeight: '44px',
+            lineHeight: '2.25',
+          }}
+        >
+          {getButtonLabel('join')}
+        </Link>
       </div>
     );
   }
@@ -242,28 +298,33 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
         <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
           Overall Quality
         </h3>
-        <div className="star-rating" style={{ display: 'flex', gap: '0.5rem' }}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              type="button"
-              aria-label={`${star} star${star !== 1 ? 's' : ''}`}
-              onClick={() => handleVote('overall_quality', 'overall', star)}
-              style={{
-                background: 'transparent',
-                border: `2px solid ${visualTokens.primaryColor}`,
-                color: selectedQuality && selectedQuality >= star ? visualTokens.primaryColor : visualTokens.accentColor,
-                padding: '0.5rem 1rem',
-                borderRadius: visualTokens.borderRadius,
-                cursor: 'pointer',
-                fontSize: '1.5rem',
-                minWidth: '44px',
-                minHeight: '44px',
-              }}
-            >
-              ★
-            </button>
-          ))}
+        <div className="star-rating" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {[1, 2, 3, 4, 5].map((star) => {
+            const isSelected = Boolean(selectedQuality && selectedQuality >= star);
+            return (
+              <button
+                key={star}
+                type="button"
+                aria-label={`${star} star${star !== 1 ? 's' : ''}${isSelected ? ' — your rating' : ''}`}
+                aria-pressed={isSelected}
+                onClick={() => handleVote('overall_quality', 'overall', star)}
+                style={{
+                  background: isSelected ? visualTokens.primaryColor : 'transparent',
+                  border: `2px solid ${isSelected ? visualTokens.primaryColor : visualTokens.accentColor}`,
+                  color: isSelected ? visualTokens.bgColor : visualTokens.accentColor,
+                  padding: '0.5rem 1rem',
+                  borderRadius: visualTokens.borderRadius,
+                  cursor: 'pointer',
+                  fontSize: '1.5rem',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  opacity: isSelected ? 1 : 0.85,
+                }}
+              >
+                {isSelected ? '★' : '☆'}
+              </button>
+            );
+          })}
         </div>
         {qualityResults.count > 0 && (
           <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
@@ -278,30 +339,41 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
           Best Actor
         </h3>
         <div className="character-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-          {cast.map((character: Character) => (
-            <button
-              key={character.id}
-              type="button"
-              onClick={() => handleVote('best_actor', character.id, 1)}
-              style={{
-                background: selectedBestActor === character.id ? visualTokens.primaryColor : 'transparent',
-                border: `2px solid ${visualTokens.primaryColor}`,
-                color: selectedBestActor === character.id ? visualTokens.bgColor : visualTokens.primaryColor,
-                padding: '0.75rem 1.5rem',
-                borderRadius: visualTokens.borderRadius,
-                cursor: 'pointer',
-                minWidth: '44px',
-                minHeight: '44px',
-              }}
-            >
-              {character.name}
-              {bestActorResults.distribution[character.id] !== undefined && (
-                <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>
-                  ({bestActorResults.distribution[character.id]})
-                </span>
-              )}
-            </button>
-          ))}
+          {cast.map((character: Character) => {
+            const isTop = bestActorTopKeys.includes(character.id);
+            return (
+              <button
+                key={character.id}
+                type="button"
+                onClick={() => handleVote('best_actor', character.id, 1)}
+                style={{
+                  background: selectedBestActor === character.id ? visualTokens.primaryColor : 'transparent',
+                  border: `2px solid ${visualTokens.primaryColor}`,
+                  color: selectedBestActor === character.id ? visualTokens.bgColor : visualTokens.primaryColor,
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: visualTokens.borderRadius,
+                  cursor: 'pointer',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                {isTop && (
+                  <span role="img" aria-label="Top vote" style={{ fontSize: '1.1rem' }}>
+                    {topIndicator}
+                  </span>
+                )}
+                {character.name}
+                {bestActorResults.distribution[character.id] !== undefined && (
+                  <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+                    ({bestActorResults.distribution[character.id]})
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -311,31 +383,42 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
           Favorite Moment
         </h3>
         <div className="moment-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-          {['opening', 'middle', 'climax', 'ending'].map((moment) => (
-            <button
-              key={moment}
-              type="button"
-              onClick={() => handleVote('favorite_moment', moment, 1)}
-              style={{
-                background: selectedFavoriteMoment === moment ? visualTokens.primaryColor : 'transparent',
-                border: `2px solid ${visualTokens.primaryColor}`,
-                color: selectedFavoriteMoment === moment ? visualTokens.bgColor : visualTokens.primaryColor,
-                padding: '0.75rem 1.5rem',
-                borderRadius: visualTokens.borderRadius,
-                cursor: 'pointer',
-                textTransform: 'capitalize',
-                minWidth: '44px',
-                minHeight: '44px',
-              }}
-            >
-              {moment}
-              {favoriteMomentResults.distribution[moment] !== undefined && (
-                <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>
-                  ({favoriteMomentResults.distribution[moment]})
-                </span>
-              )}
-            </button>
-          ))}
+          {['opening', 'middle', 'climax', 'ending'].map((moment) => {
+            const isTop = favoriteTopKeys.includes(moment);
+            return (
+              <button
+                key={moment}
+                type="button"
+                onClick={() => handleVote('favorite_moment', moment, 1)}
+                style={{
+                  background: selectedFavoriteMoment === moment ? visualTokens.primaryColor : 'transparent',
+                  border: `2px solid ${visualTokens.primaryColor}`,
+                  color: selectedFavoriteMoment === moment ? visualTokens.bgColor : visualTokens.primaryColor,
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: visualTokens.borderRadius,
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                {isTop && (
+                  <span role="img" aria-label="Top vote" style={{ fontSize: '1.1rem' }}>
+                    {topIndicator}
+                  </span>
+                )}
+                {moment}
+                {favoriteMomentResults.distribution[moment] !== undefined && (
+                  <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+                    ({favoriteMomentResults.distribution[moment]})
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -345,31 +428,42 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
           Funniest Moment
         </h3>
         <div className="moment-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-          {['opening', 'middle', 'climax', 'ending'].map((moment) => (
-            <button
-              key={moment}
-              type="button"
-              onClick={() => handleVote('funniest_moment', moment, 1)}
-              style={{
-                background: selectedFunniestMoment === moment ? visualTokens.primaryColor : 'transparent',
-                border: `2px solid ${visualTokens.primaryColor}`,
-                color: selectedFunniestMoment === moment ? visualTokens.bgColor : visualTokens.primaryColor,
-                padding: '0.75rem 1.5rem',
-                borderRadius: visualTokens.borderRadius,
-                cursor: 'pointer',
-                textTransform: 'capitalize',
-                minWidth: '44px',
-                minHeight: '44px',
-              }}
-            >
-              {moment}
-              {funniestMomentResults.distribution[moment] !== undefined && (
-                <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>
-                  ({funniestMomentResults.distribution[moment]})
-                </span>
-              )}
-            </button>
-          ))}
+          {['opening', 'middle', 'climax', 'ending'].map((moment) => {
+            const isTop = funniestTopKeys.includes(moment);
+            return (
+              <button
+                key={moment}
+                type="button"
+                onClick={() => handleVote('funniest_moment', moment, 1)}
+                style={{
+                  background: selectedFunniestMoment === moment ? visualTokens.primaryColor : 'transparent',
+                  border: `2px solid ${visualTokens.primaryColor}`,
+                  color: selectedFunniestMoment === moment ? visualTokens.bgColor : visualTokens.primaryColor,
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: visualTokens.borderRadius,
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                {isTop && (
+                  <span role="img" aria-label="Top vote" style={{ fontSize: '1.1rem' }}>
+                    {topIndicator}
+                  </span>
+                )}
+                {moment}
+                {funniestMomentResults.distribution[moment] !== undefined && (
+                  <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+                    ({funniestMomentResults.distribution[moment]})
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
     </div>

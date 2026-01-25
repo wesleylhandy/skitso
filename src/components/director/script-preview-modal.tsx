@@ -12,6 +12,7 @@ import { useAtomValue } from 'jotai';
 import { useVibe } from '@/src/lib/hooks/use-vibe';
 import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { flattenScriptLines } from '@/src/components/teleprompter/script-lines';
+import { ScriptExportButton } from '@/src/components/ui/script-export-button';
 import type { Script } from '@/src/state/types/session';
 
 interface ScriptPreviewModalProps {
@@ -314,14 +315,15 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
 
         {/* Footer */}
         <div
-          className="p-4 border-t text-sm text-center"
+          className="p-4 border-t flex items-center justify-between flex-wrap gap-2"
           style={{ 
             borderColor: visualTokens.primaryColor, 
             color: visualTokens.textColor,
-            opacity: 0.7,
+            opacity: 0.9,
           }}
         >
-          Script preview • Editing coming soon
+          <span className="text-sm">Script preview</span>
+          <ScriptExportButton variant="secondary" />
         </div>
       </div>
     </dialog>

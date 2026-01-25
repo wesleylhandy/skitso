@@ -15,6 +15,7 @@ export type SessionStatus =
   | 'expired';
 
 export type ConnectionStatus = 
+  | 'connecting'
   | 'connected'
   | 'disconnected'
   | 'reconnecting';
@@ -23,6 +24,7 @@ export type AssignmentStatus =
   | 'none' // No assignment or request
   | 'requested' // Actor has requested a character
   | 'pending' // Director has assigned, waiting for actor confirmation
+  | 'rejected' // Director rejected request or unassigned character
   | 'locked'; // Assignment is confirmed and locked
 
 export interface Participant {
@@ -33,6 +35,7 @@ export interface Participant {
   characterAssignment: Character | null;
   assignmentStatus: AssignmentStatus;
   requestedCharacterId: string | null; // Character ID actor requested
+  rejectedCharacterId?: string | null; // Character ID that was rejected/unassigned (optional for backward compatibility)
   connectionStatus: ConnectionStatus;
   joinedAt: number;
   deviceInfo: {

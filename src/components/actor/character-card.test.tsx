@@ -53,4 +53,25 @@ describe('CharacterCard', () => {
     render(<CharacterCard character={mockCharacter} />);
     expect(screen.queryByText(/to win the competition/i)).not.toBeInTheDocument();
   });
+
+  it('should display attributes when present', () => {
+    const withAttrs: Character = {
+      ...mockCharacter,
+      attributes: [
+        { name: 'Confidence', rating: 95 },
+        { name: 'Chaos Level', rating: 88 },
+      ],
+    };
+    render(<CharacterCard character={withAttrs} />);
+    expect(screen.getByText('Attributes:')).toBeInTheDocument();
+    expect(screen.getByText(/Confidence:/)).toBeInTheDocument();
+    expect(screen.getByText(/95\/100/)).toBeInTheDocument();
+    expect(screen.getByText(/Chaos Level:/)).toBeInTheDocument();
+    expect(screen.getByText(/88\/100/)).toBeInTheDocument();
+  });
+
+  it('should not show Attributes section when attributes are missing', () => {
+    render(<CharacterCard character={mockCharacter} />);
+    expect(screen.queryByText('Attributes:')).not.toBeInTheDocument();
+  });
 });

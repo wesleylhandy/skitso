@@ -38,9 +38,15 @@ export function ConnectionStatus({ status, className = '' }: ConnectionStatusPro
       indicatorClass: 'bg-yellow-500 animate-pulse',
       textClass: 'text-yellow-500',
     },
+    connecting: {
+      label: 'Connecting...',
+      ariaLabel: 'Connection status: Connecting',
+      indicatorClass: 'bg-blue-500 animate-pulse',
+      textClass: 'text-blue-500',
+    },
   };
 
-  const config = statusConfig[status];
+  const config = statusConfig[status] || statusConfig.disconnected;
 
   return (
     <div className={`flex items-center gap-2 ${className}`} role="status" aria-live="polite">

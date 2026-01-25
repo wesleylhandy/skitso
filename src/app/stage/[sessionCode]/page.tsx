@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useEffect, use } from 'react';
+import { useEffect, use, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useRouter } from 'next/navigation';
@@ -56,8 +56,10 @@ export default function StagePage({ params }: StagePageProps) {
   const participant = useAtomValue(participantAtom);
   const script = useAtomValue(currentScriptAtom);
   const sessionState = useAtomValue(sessionStateAtom);
+  const setSessionState = useSetAtom(sessionStateAtom);
   const setVibe = useSetAtom(vibeAtom);
   const { visualTokens } = useVibe();
+  const [participantsCount, setParticipantsCount] = useState<number | null>(null);
 
   // Hydrate vibe from PartyKit (state:recovered + session:state:updated) so stage respects Director's vibe
   useEffect(() => {
@@ -87,7 +89,11 @@ export default function StagePage({ params }: StagePageProps) {
         if (data.sessionId !== sessionCode) return;
         if (data.recovered) {
           const fetched = await fetchSessionState(sessionCode);
-          if (fetched?.vibeContext && mounted) setVibe(fetched.vibeContext as never);
+          if (fetched && mounted) {
+            if (fetched.vibeContext) setVibe(fetched.vibeContext as never);
+            const list = fetched.participants as unknown[];
+            setParticipantsCount(Array.isArray(list) ? list.length : 0);
+          }
           return;
         }
         if (data.vibeContext) setVibe(data.vibeContext as never);
@@ -99,7 +105,11 @@ export default function StagePage({ params }: StagePageProps) {
     client.addEventListener('message', handleStateRecovered);
 
     const unsubscribeState = onSessionStateUpdate((data) => {
-      if (data.sessionId === sessionCode && mounted && data.vibeContext) {
+      if (data.sessionId !== sessionCode || !mounted) return;
+      if (data.status) {
+        setSessionState(data.status);
+      }
+      if (data.vibeContext) {
         setVibe(data.vibeContext as never);
       }
     });
@@ -115,7 +125,19 @@ export default function StagePage({ params }: StagePageProps) {
       client.removeEventListener('message', handleStateRecovered);
       unsubscribeState();
     };
-  }, [sessionCode, setVibe]);
+  }, [sessionCode, setSessionState, setVibe]);
+
+  // Fetch participant count when performing (e.g. director navigated from casting without state:recovered)
+  useEffect(() => {
+    if (!sessionCode || sessionState !== 'performing' || participantsCount !== null) return;
+    let mounted = true;
+    fetchSessionState(sessionCode).then((fetched) => {
+      if (!mounted || !fetched) return;
+      const list = fetched.participants as unknown[];
+      setParticipantsCount(Array.isArray(list) ? list.length : 0);
+    });
+    return () => { mounted = false; };
+  }, [sessionCode, sessionState, participantsCount]);
 
   // Redirect if session code doesn't match or participant not joined
   useEffect(() => {
@@ -173,7 +195,7 @@ export default function StagePage({ params }: StagePageProps) {
         fontFamily: visualTokens.bodyFont,
       }}
     >
-      <Teleprompter sessionCode={sessionCode} />
+      <Teleprompter sessionCode={sessionCode} participantsCount={participantsCount ?? undefined} />
     </div>
   );
 }

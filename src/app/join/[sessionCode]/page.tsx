@@ -26,6 +26,7 @@ import {
   onPerformanceStart,
   onCharacterAssigned,
   onAssignmentApproved,
+  onAssignmentRejected,
   onAssignmentSuggested,
   onAssignmentConfirmed,
   onScriptUpdate,
@@ -37,6 +38,11 @@ import {
   joinSession,
   getCharacterImageUrl,
   fetchSessionState,
+  fetchEvents,
+  replayEvents,
+  getLastEventTimestamp,
+  setLastEventTimestamp,
+  type EventLogEntry,
 } from '@/src/lib/partykit/client';
 import { ConnectionStatusBadge } from '@/src/components/ui/connection-status-badge';
 import { SessionExpirationWarning } from '@/src/components/ui/session-expiration-warning';
@@ -235,6 +241,7 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
         const STATE_RECOVERY_RETRY_MAX = 3;
         let stateRecoveryRetryCount = 0;
         let stateRecoveryRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
+        let httpPollingInterval: ReturnType<typeof setInterval> | null = null;
 
         const requestStateRecovery = () => {
           const currentClient = getPartyKitClient();
@@ -251,7 +258,40 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
 
         const scheduleRecoveryRetry = (delayMs: number) => {
           if (stateRecoveryRetryCount >= STATE_RECOVERY_RETRY_MAX) {
-            console.warn('[JoinPage] Max state recovery retries reached, stopping');
+            console.warn('[JoinPage] Max WebSocket state recovery retries reached, switching to HTTP polling');
+            // Switch to HTTP polling as fallback when WebSocket retries are exhausted
+            if (httpPollingInterval) {
+              clearInterval(httpPollingInterval);
+            }
+            httpPollingInterval = setInterval(async () => {
+              if (!mounted) {
+                if (httpPollingInterval) {
+                  clearInterval(httpPollingInterval);
+                  httpPollingInterval = null;
+                }
+                return;
+              }
+              try {
+                const fetched = await fetchSessionState(sessionCode);
+                if (fetched && mounted) {
+                  // Only update if we got meaningful state (not still configuring without data)
+                  if (fetched.status !== 'configuring' || (fetched.cast && fetched.cast.length > 0) || fetched.script) {
+                    console.log('[JoinPage] HTTP state recovery succeeded, updating state');
+                    handleStateRecovered(fetched);
+                    // If we got complete state, stop polling
+                    if (fetched.status === 'casting' || fetched.status === 'performing') {
+                      if (httpPollingInterval) {
+                        clearInterval(httpPollingInterval);
+                        httpPollingInterval = null;
+                      }
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error('[JoinPage] HTTP state recovery failed:', error);
+                // Continue polling on error
+              }
+            }, 3000); // Poll every 3 seconds
             return;
           }
           stateRecoveryRetryCount++;
@@ -265,7 +305,7 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
 
         // Define state recovery handler and message listener first (must be attached
         // before sending state:recover so we don't miss the server's reply).
-        const handleStateRecovered = (recoveredData: {
+        const handleStateRecovered = async (recoveredData: {
           sessionId: string;
           vibeContext: VibeType;
           status: string;
@@ -350,37 +390,25 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
                 const assignedCharacter = recoveredData.cast?.find(
                   (char) => char.participantId === currentParticipant.id
                 );
-                if (assignedCharacter) {
-                  // Only set assignment status if character is locked (confirmed assignment)
-                  // For unlocked characters, assignment status should only be set via PartyKit events
-                  // (assignment:approved, assignment:suggested, assignment:confirmed)
-                  // This prevents showing confirmation UI when no assignment was actually made
-                  if (assignedCharacter.isLocked) {
-                    return {
-                      ...currentParticipant,
-                      characterAssignment: assignedCharacter,
-                      assignmentStatus: 'locked',
-                    };
-                  }
-                  // If character has participantId but is not locked, only set characterAssignment
-                  // if assignmentStatus is already 'pending' or 'requested' (from a previous event)
-                  // Otherwise, don't set assignment status - let PartyKit events handle it
-                  if (currentParticipant.assignmentStatus === 'pending' || currentParticipant.assignmentStatus === 'requested') {
-                    return {
-                      ...currentParticipant,
-                      characterAssignment: assignedCharacter,
-                      // Keep existing assignmentStatus - don't override
-                    };
-                  }
-                  // If assignmentStatus is 'none', clear characterAssignment to avoid showing confirmation UI
-                  // The character might have participantId from stale data or a previous session
+                
+                // CRITICAL: Only show assignments from state recovery if they are LOCKED
+                // Unlocked assignments should NEVER be inferred from state recovery
+                // They must come from explicit PartyKit events (assignment:approved, assignment:suggested, etc.)
+                if (assignedCharacter && assignedCharacter.isLocked) {
+                  // Only locked assignments are valid from state recovery
                   return {
                     ...currentParticipant,
-                    characterAssignment: null,
-                    assignmentStatus: 'none',
+                    characterAssignment: assignedCharacter,
+                    assignmentStatus: 'locked',
                   };
                 }
-                // If no assigned character found, clear assignment if it exists
+                
+                // If character has participantId but is NOT locked, do NOT set assignment
+                // This prevents showing assignment UI when no actual assignment was made
+                // The participantId might be from stale data or a previous session
+                // Only PartyKit events (assignment:approved, assignment:suggested) should set pending assignments
+                
+                // Clear any existing assignment if character is not locked
                 if (currentParticipant.characterAssignment) {
                   return {
                     ...currentParticipant,
@@ -388,6 +416,7 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
                     assignmentStatus: 'none',
                   };
                 }
+                
                 return currentParticipant;
               });
             } else {
@@ -421,6 +450,142 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
                   role: 'actor',
                   name: participant.name,
                 });
+
+                // After joining, check if actor has an assignment in cast that they should see
+                // This handles cases where director assigned a character but actor reconnected
+                const assignedCharacterInCast = recoveredData.cast?.find(
+                  (char) => char.participantId === participant.id
+                );
+                
+                if (assignedCharacterInCast && !participant.characterAssignment) {
+                  // Actor has an assignment in cast but participant object doesn't have it
+                  // Set it based on lock status
+                  if (assignedCharacterInCast.isLocked) {
+                    setParticipant({
+                      ...participant,
+                      characterAssignment: assignedCharacterInCast,
+                      assignmentStatus: 'locked',
+                    });
+                  } else {
+                    // Pending assignment - director assigned but actor hasn't confirmed
+                    setParticipant({
+                      ...participant,
+                      characterAssignment: assignedCharacterInCast,
+                      assignmentStatus: 'pending',
+                    });
+                  }
+                }
+
+                // After joining, replay missed events if reconnecting
+                const lastTimestamp = getLastEventTimestamp(sessionCode);
+                if (lastTimestamp > 0) {
+                  try {
+                    const events = await fetchEvents(sessionCode, lastTimestamp);
+                    if (events.length > 0 && mounted) {
+                      console.log('[JoinPage] Replaying missed events:', events.length);
+                      
+                      // Replay events with idempotency checks
+                      const currentState = {
+                        participants: [],
+                        cast,
+                        assignmentRequests: new Map(),
+                      };
+
+                      await replayEvents(events, currentState, (event: EventLogEntry) => {
+                        // Handle each event type for actors
+                        if (event.type === 'cast:updated' && event.data) {
+                          const eventData = event.data as { cast?: Character[] };
+                          if (eventData.cast) {
+                            const castWithImageUrls = eventData.cast.map((char) => {
+                              const existingImageUrl = char.visualRepresentation?.imageUrl;
+                              const httpImageUrl = existingImageUrl && existingImageUrl.length > 0 && !existingImageUrl.startsWith('data:')
+                                ? existingImageUrl
+                                : getCharacterImageUrl(sessionCode, char.id);
+                              const finalImageUrl = httpImageUrl.startsWith('data:')
+                                ? getCharacterImageUrl(sessionCode, char.id)
+                                : httpImageUrl;
+                              return {
+                                ...char,
+                                visualRepresentation: {
+                                  ...char.visualRepresentation,
+                                  imageUrl: finalImageUrl,
+                                },
+                              };
+                            });
+                            setCast(castWithImageUrls);
+                            
+                            // Check if actor's assignment changed
+                            const currentParticipant = participant;
+                            if (currentParticipant) {
+                              const newAssignedCharacter = castWithImageUrls.find(
+                                (char) => char.participantId === currentParticipant.id
+                              );
+                              if (newAssignedCharacter) {
+                                if (newAssignedCharacter.isLocked) {
+                                  setParticipant({
+                                    ...currentParticipant,
+                                    characterAssignment: newAssignedCharacter,
+                                    assignmentStatus: 'locked',
+                                  });
+                                } else if (!currentParticipant.characterAssignment) {
+                                  // New pending assignment
+                                  setParticipant({
+                                    ...currentParticipant,
+                                    characterAssignment: newAssignedCharacter,
+                                    assignmentStatus: 'pending',
+                                  });
+                                }
+                              }
+                            }
+                          }
+                        } else if (event.type === 'assignment:approved' && event.data && participant && event.participantId === participant.id) {
+                          const eventData = event.data as { characterId: string };
+                          const approvedCharacter = cast.find((c) => c.id === eventData.characterId);
+                          if (approvedCharacter) {
+                            setParticipant({
+                              ...participant,
+                              characterAssignment: approvedCharacter,
+                              assignmentStatus: 'pending',
+                              requestedCharacterId: null,
+                            });
+                          }
+                        } else if (event.type === 'assignment:rejected' && event.data && participant && event.participantId === participant.id) {
+                          const eventData = event.data as { characterId: string };
+                          setParticipant({
+                            ...participant,
+                            characterAssignment: null,
+                            assignmentStatus: 'rejected',
+                            requestedCharacterId: null,
+                            rejectedCharacterId: eventData.characterId,
+                          });
+                        } else if (event.type === 'assignment:confirmed' && event.data && participant && event.participantId === participant.id) {
+                          setCast((currentCast) =>
+                            currentCast.map((char) => (char.id === event.characterId ? { ...char, isLocked: true } : char))
+                          );
+                          setParticipant({
+                            ...participant,
+                            assignmentStatus: 'locked',
+                          });
+                        } else if (event.type === 'character:assigned' && event.data && participant && event.participantId === participant.id) {
+                          // Director directly assigned a character
+                          const eventData = event.data as { characterId: string; isLocked?: boolean };
+                          const assignedCharacter = cast.find((c) => c.id === eventData.characterId);
+                          if (assignedCharacter) {
+                            setParticipant({
+                              ...participant,
+                              characterAssignment: assignedCharacter,
+                              assignmentStatus: eventData.isLocked ? 'locked' : 'pending',
+                            });
+                          }
+                        }
+                        // Update last timestamp
+                        setLastEventTimestamp(sessionCode, event.timestamp);
+                      });
+                    }
+                  } catch (error) {
+                    console.error('[JoinPage] Failed to replay events:', error);
+                  }
+                }
               } catch (error) {
                 console.error('[JoinPage] Failed to send join message:', error);
               }
@@ -520,6 +685,8 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
                 requestedCharacterId: null,
               });
             }
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
           }
         });
 
@@ -537,6 +704,32 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
           }
         });
 
+        const unsubscribeAssignmentRejected = onAssignmentRejected((data) => {
+          if (data.sessionId === sessionCode && mounted && participant && data.participantId === participant.id) {
+            // Clear assignment and set status to rejected
+            setParticipant({
+              ...participant,
+              characterAssignment: null,
+              assignmentStatus: 'rejected',
+              requestedCharacterId: null,
+              rejectedCharacterId: data.characterId,
+            });
+            
+            // Update cast to remove assignment
+            setCast((currentCast) => {
+              return currentCast.map((char) => {
+                if (char.id === data.characterId && char.participantId === participant.id) {
+                  return { ...char, participantId: null, isLocked: false };
+                }
+                return char;
+              });
+            });
+            
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
+          }
+        });
+
         const unsubscribeAssignmentConfirmed = onAssignmentConfirmed((data) => {
           if (data.sessionId === sessionCode && mounted) {
             setCast((currentCast) =>
@@ -549,6 +742,8 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
                 assignmentStatus: 'locked',
               });
             }
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
           }
         });
 
@@ -608,54 +803,77 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
               })),
             });
             setCast(castWithImageUrls);
+            
+            // CRITICAL: Update participant assignment if cast shows an assignment for this actor
+            // This ensures actors see their assignments even if they missed the assignment event
+            if (participant) {
+              const assignedCharacter = castWithImageUrls.find(
+                (char) => char.participantId === participant.id
+              );
+              
+              if (assignedCharacter) {
+                // Actor has an assignment in cast
+                if (assignedCharacter.isLocked) {
+                  // Locked assignment - always update
+                  setParticipant({
+                    ...participant,
+                    characterAssignment: assignedCharacter,
+                    assignmentStatus: 'locked',
+                  });
+                } else if (!participant.characterAssignment || participant.characterAssignment.id !== assignedCharacter.id) {
+                  // Pending assignment (director assigned, waiting for actor confirmation)
+                  // Only update if participant doesn't already have this assignment
+                  // to avoid overwriting 'requested' status
+                  if (participant.assignmentStatus !== 'requested') {
+                    setParticipant({
+                      ...participant,
+                      characterAssignment: assignedCharacter,
+                      assignmentStatus: 'pending',
+                    });
+                  }
+                }
+              } else if (participant.characterAssignment) {
+                // Character was unassigned - clear assignment
+                setParticipant({
+                  ...participant,
+                  characterAssignment: null,
+                  assignmentStatus: 'none',
+                });
+              }
+            }
+            
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
             setParticipant((currentParticipant) => {
               if (!currentParticipant) return currentParticipant;
 
               const assignedCharacter = data.cast.find((char) => char.participantId === currentParticipant.id);
-              if (assignedCharacter) {
-                // Only set assignment status if character is locked (confirmed assignment)
-                // For unlocked characters, assignment status should only be set via PartyKit events
-                // (assignment:approved, assignment:suggested, assignment:confirmed)
-                // This prevents showing confirmation UI when no assignment was actually made
-                if (assignedCharacter.isLocked) {
-                  return {
-                    ...currentParticipant,
-                    characterAssignment: assignedCharacter,
-                    assignmentStatus: 'locked',
-                  };
-                }
-                // If character has participantId but is not locked, only update characterAssignment
-                // if assignmentStatus is already 'pending' or 'requested' (from a previous event)
-                // Otherwise, don't set assignment status - let PartyKit events handle it
-                if (currentParticipant.assignmentStatus === 'pending' || currentParticipant.assignmentStatus === 'requested') {
-                  return {
-                    ...currentParticipant,
-                    characterAssignment: assignedCharacter,
-                    // Keep existing assignmentStatus - don't override
-                  };
-                }
-                // If assignmentStatus is 'none', clear characterAssignment to avoid showing confirmation UI
-                // The character might have participantId from stale data or a previous session
-                if (
-                  !currentParticipant.characterAssignment ||
-                  currentParticipant.characterAssignment.id !== assignedCharacter.id
-                ) {
-                  return {
-                    ...currentParticipant,
-                    characterAssignment: null,
-                    assignmentStatus: 'none',
-                  };
-                }
-              } else {
-                // If no assigned character found, clear assignment if it exists
-                if (currentParticipant.characterAssignment) {
-                  return {
-                    ...currentParticipant,
-                    characterAssignment: null,
-                    assignmentStatus: 'none',
-                  };
-                }
+              
+              // CRITICAL: Only show assignments from cast updates if they are LOCKED
+              // Unlocked assignments should NEVER be inferred from cast updates
+              // They must come from explicit PartyKit events (assignment:approved, assignment:suggested, etc.)
+              if (assignedCharacter && assignedCharacter.isLocked) {
+                // Only locked assignments are valid from cast updates
+                return {
+                  ...currentParticipant,
+                  characterAssignment: assignedCharacter,
+                  assignmentStatus: 'locked',
+                };
               }
+              
+              // If character has participantId but is NOT locked, do NOT set assignment
+              // This prevents showing assignment UI when no actual assignment was made
+              // Only PartyKit events (assignment:approved, assignment:suggested) should set pending assignments
+              
+              // Clear any existing assignment if character is not locked or not found
+              if (currentParticipant.characterAssignment) {
+                return {
+                  ...currentParticipant,
+                  characterAssignment: null,
+                  assignmentStatus: 'none',
+                };
+              }
+              
               return currentParticipant;
             });
           }
@@ -701,7 +919,12 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
 
         socketCleanup = () => {
           if (stateRecoveryRetryTimeoutId) {
-            clearTimeout(stateRecoveryRetryTimeoutId);
+            // Check if it's an interval (HTTP polling) or timeout (WebSocket retry)
+            if (typeof stateRecoveryRetryTimeoutId === 'number') {
+              clearInterval(stateRecoveryRetryTimeoutId);
+            } else {
+              clearTimeout(stateRecoveryRetryTimeoutId);
+            }
             stateRecoveryRetryTimeoutId = null;
           }
           if (client) {
@@ -710,6 +933,7 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
           unsubscribePerformance();
           unsubscribeCharacterAssigned();
           unsubscribeAssignmentApproved();
+          unsubscribeAssignmentRejected();
           unsubscribeAssignmentSuggested();
           unsubscribeAssignmentConfirmed();
           unsubscribeScriptUpdate();
@@ -822,38 +1046,67 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
   // see the waiting/preview UI until the Director decides how to bring them in (T189).
   useEffect(() => {
     if (participant && sessionState === 'performing' && script && !joinedDuringPerformance) {
-      router.push(`/stage/${sessionCode}`);
+      // Use replace instead of push to avoid adding to history
+      // Add a small delay to ensure state is stable before redirecting
+      const redirectTimer = setTimeout(() => {
+        router.replace(`/stage/${sessionCode}`);
+      }, 100);
+
+      return () => clearTimeout(redirectTimer);
     }
   }, [participant, sessionState, script, sessionCode, router, joinedDuringPerformance]);
 
-  // Sync character assignment from cast if it exists but participant doesn't have it
-  // This must be outside conditional blocks to follow Rules of Hooks
-  const assignedCharacterFromCast = participant ? cast.find((char) => char.participantId === participant.id) : null;
-  const assignedCharacterFromParticipant = participant?.characterAssignment ?? null;
-  
+  // Redirect to wrap party when session is completed (e.g. rejoin from wrap party "Rejoin to vote").
   useEffect(() => {
-    if (participant && assignedCharacterFromCast && !assignedCharacterFromParticipant) {
-      // Only sync if character is locked (confirmed assignment)
-      // For unlocked characters, assignment status should only be set via PartyKit events
-      // This prevents showing confirmation UI when no assignment was actually made
-      if (assignedCharacterFromCast.isLocked) {
-        console.log('Syncing locked character assignment from cast:', assignedCharacterFromCast);
-        setParticipant({
-          ...participant,
-          characterAssignment: assignedCharacterFromCast,
-          assignmentStatus: 'locked',
-        });
-      }
-      // If character is not locked, don't automatically set assignment status
-      // Let PartyKit events (assignment:approved, assignment:suggested) handle it
-    }
-  }, [participant?.id, assignedCharacterFromCast?.id, assignedCharacterFromParticipant?.id, setParticipant]);
+    if (participant && participant.sessionId === sessionCode && sessionState === 'completed') {
+      const redirectTimer = setTimeout(() => {
+        router.replace(`/wrap-party/${sessionCode}`);
+      }, 100);
 
-    // If participant already joined, show preview interface or locked character
-    // CRITICAL: Check if participant belongs to this session to avoid showing wrong participant
+      return () => clearTimeout(redirectTimer);
+    }
+  }, [participant, sessionState, sessionCode, router]);
+
+  // CRITICAL: Do NOT sync character assignments from cast automatically
+  // Assignments should ONLY come from explicit PartyKit events:
+  // - assignment:approved (sets pending status)
+  // - assignment:suggested (sets pending status)
+  // - assignment:confirmed (sets locked status)
+  // 
+  // State recovery and cast updates should ONLY show locked assignments
+  // Unlocked assignments with participantId should be ignored until an explicit event arrives
+
+  // Check if participant has a character assignment (from participant object or from cast)
+  // Only consider locked assignments from cast - unlocked ones are ignored
+  // This must be outside conditional blocks to follow Rules of Hooks
+  const assignedCharacterFromParticipant = participant?.characterAssignment ?? null;
+  const assignedCharacterFromCast = participant 
+    ? cast.find((char) => char.participantId === participant.id && char.isLocked) ?? null
+    : null;
+
+  // If participant already joined, show preview interface or locked character
+  // CRITICAL: Check if participant belongs to this session to avoid showing wrong participant
   if (participant && participant.sessionId === sessionCode) {
-    // If session is performing and script exists, show loading while redirecting
-    if (sessionState === 'performing' && script) {
+    // If session is completed, redirect to wrap party (e.g. rejoin from "Rejoin to vote" link).
+    if (sessionState === 'completed') {
+      return (
+        <div
+          className="min-h-screen flex items-center justify-center px-4"
+          style={{ backgroundColor: visualTokens.bgColor, color: visualTokens.textColor }}
+        >
+          <VibePanel className="w-full max-w-md text-center">
+            <VibeHeading level={2} sectionKey="redirectingToWrapParty" className="mb-2 text-2xl font-semibold" />
+          </VibePanel>
+        </div>
+      );
+    }
+
+    // If session is performing and script exists, redirect to stage immediately
+    // Only show redirecting message for actors (not directors) who are being redirected
+    // Directors should never see this message - they navigate directly to stage
+    if (sessionState === 'performing' && script && !joinedDuringPerformance && participant.role !== 'director') {
+      // The redirect useEffect will handle the navigation
+      // Show a brief loading state while redirect happens
       return (
         <div
           className="min-h-screen flex items-center justify-center px-4"
@@ -902,7 +1155,8 @@ export default function SessionJoinPage({ params }: SessionJoinPageProps) {
     }
 
     // Check if participant has a character assignment (from participant object or from cast)
-    const hasCharacterAssignment = assignedCharacterFromParticipant !== null || assignedCharacterFromCast !== undefined;
+    // Only locked assignments are considered
+    const hasCharacterAssignment = assignedCharacterFromParticipant !== null || assignedCharacterFromCast !== null;
     
     // Show preview interface when:
     // 1. Script AND cast are ready (complete generation) - preferred

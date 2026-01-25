@@ -123,6 +123,21 @@ export interface SessionStateResponse {
   timeUntilExpiration: number;
 }
 
+/** Event log entry from server */
+export interface EventLogEntry {
+  id: string;
+  timestamp: number;
+  type: string;
+  data: unknown;
+  participantId?: string;
+  characterId?: string;
+}
+
+/** Event log response from GET /events */
+export interface EventLogResponse {
+  events: EventLogEntry[];
+}
+
 /**
  * Fetch full session state via HTTP (GET /state).
  * Use after receiving minimal state:recovered over WebSocket to stay under message size limits.
@@ -140,6 +155,29 @@ export async function fetchSessionState(sessionId: string): Promise<SessionState
   }
   if (!res.ok) return null;
   return (await res.json()) as SessionStateResponse;
+}
+
+/**
+ * Fetch events since a timestamp via HTTP (GET /events?since={timestamp}).
+ * Used for event replay on reconnection.
+ * Returns empty array on error.
+ */
+export async function fetchEvents(sessionId: string, since: number): Promise<EventLogEntry[]> {
+  const host = getPartyKitHost();
+  if (!host) return [];
+  const url = `${host}/parties/main/${sessionId}/events?since=${since}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn('[PartyKit] Failed to fetch events:', res.status, res.statusText);
+      return [];
+    }
+    const data = (await res.json()) as EventLogResponse;
+    return data.events || [];
+  } catch (error) {
+    console.error('[PartyKit] Error fetching events:', error);
+    return [];
+  }
 }
 
 /**
@@ -356,10 +394,19 @@ export function initializePartyKitClient(room: string): PartySocket {
 
   partySocket.addEventListener('error', (error: Event) => {
     // Error events don't always have detailed information
+    const host = getPartyKitHost();
+    const room = partySocket?.room || 'unknown';
+    const readyState = partySocket?.readyState ?? WebSocket.CLOSED;
+    
     const errorInfo: Record<string, unknown> = {
       timestamp: new Date().toISOString(),
-      host: getPartyKitHost(),
-      room: partySocket?.room || 'unknown',
+      host: host || 'not configured',
+      room,
+      readyState,
+      readyStateText: readyState === WebSocket.CONNECTING ? 'CONNECTING' 
+        : readyState === WebSocket.OPEN ? 'OPEN'
+        : readyState === WebSocket.CLOSING ? 'CLOSING'
+        : 'CLOSED',
     };
     
     if (error instanceof ErrorEvent) {
@@ -378,25 +425,34 @@ export function initializePartyKitClient(room: string): PartySocket {
       }
     }
     
-    // Always log with context, even if error details are minimal
-    console.error('PartyKit connection error:', errorInfo);
+    // Log error with full context
+    console.error('[PartyKit] Connection error:', {
+      ...errorInfo,
+      // Include error object itself for debugging
+      errorObject: error,
+    });
     
     // Provide helpful diagnostic message
-    const host = getPartyKitHost();
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
       console.warn(
-        'PartyKit connection failed. Make sure PartyKit dev server is running:\n' +
+        '[PartyKit] Connection failed. Make sure PartyKit dev server is running:\n' +
         '  Run: npm run dev:partykit\n' +
         '  Or: npm run dev:all (runs both Next.js and PartyKit)\n' +
-        `  Expected host: ${host}`
+        `  Expected host: ${host}\n` +
+        `  Room: ${room}`
       );
     } else {
       console.warn(
-        `PartyKit connection failed to ${host}.\n` +
+        `[PartyKit] Connection failed to ${host}.\n` +
         '  Check that NEXT_PUBLIC_PARTYKIT_HOST is set correctly.\n' +
-        '  Verify the PartyKit server is deployed and accessible.'
+        '  Verify the PartyKit server is deployed and accessible.\n' +
+        `  Room: ${room}`
       );
     }
+    
+    // Update connection status
+    connectionStatus = 'disconnected';
+    triggerEvent('connection:status', connectionStatus);
     
     handleConnectionError();
   });
@@ -521,6 +577,13 @@ export function getConnectionStatus(): ConnectionStatus {
 /**
  * Listen for connection status changes
  */
+export function onConnectionStatus(
+  callback: (status: ConnectionStatus) => void
+): () => void {
+  // Alias for onConnectionStatusChange for consistency
+  return onConnectionStatusChange(callback);
+}
+
 export function onConnectionStatusChange(
   callback: (status: ConnectionStatus) => void
 ): () => void {
@@ -968,19 +1031,23 @@ async function storeCharacterImageViaHttp(
 
 /**
  * Create a minimal character object for WebSocket transmission.
- * Includes name, archetypeLabel, personalityTraits so UI can display them.
- * Server merges with existing cast; we omit imagePrompt/hiddenMotivation to save size.
+ * Includes name, archetypeLabel, personalityTraits, hiddenMotivation, and attributes so UI can display them.
+ * Server merges with existing cast; we omit imagePrompt to save size.
+ * CRITICAL: Include hiddenMotivation so actors can see it on join page.
+ * CRITICAL: Include attributes so Character Dossier and cards show ratings (e.g. Confidence 95/100).
  */
 function createMinimalCharacter(char: Character): Character {
+  // CRITICAL: Ensure all character data fields are preserved
+  // Use explicit checks to preserve empty strings (shouldn't happen but handle gracefully)
   return {
     id: char.id,
     sessionId: char.sessionId,
     participantId: char.participantId,
     isLocked: char.isLocked,
-    name: char.name || '',
-    archetypeLabel: char.archetypeLabel || '',
+    name: char.name !== undefined ? char.name : '',
+    archetypeLabel: char.archetypeLabel !== undefined ? char.archetypeLabel : '',
     personalityTraits: Array.isArray(char.personalityTraits) ? char.personalityTraits : [],
-    hiddenMotivation: '', // Omit to save size; server preserves from existing
+    hiddenMotivation: char.hiddenMotivation !== undefined ? char.hiddenMotivation : '', // Include so actors can see it on join page
     visualRepresentation: {
       imageUrl: char.visualRepresentation?.imageUrl || '',
       imagePrompt: '', // Omit to save size; server preserves from existing
@@ -1081,6 +1148,27 @@ export function updateCast(sessionId: string, cast: Character[]): void {
     return;
   }
 
+  // CRITICAL: Validate that characters have required data before sending
+  // Log warnings for characters missing name, traits, or hiddenMotivation
+  const charactersWithMissingData = cast.filter(
+    (char) => !char.name || !char.archetypeLabel || !char.personalityTraits || !char.hiddenMotivation
+  );
+  if (charactersWithMissingData.length > 0) {
+    console.warn('[PartyKit] Characters missing data before sending:', {
+      sessionId,
+      missingDataCount: charactersWithMissingData.length,
+      charactersWithMissingData: charactersWithMissingData.map((char) => ({
+        id: char.id,
+        hasName: !!char.name,
+        hasArchetype: !!char.archetypeLabel,
+        hasTraits: Array.isArray(char.personalityTraits) && char.personalityTraits.length > 0,
+        hasHiddenMotivation: !!char.hiddenMotivation,
+        name: char.name,
+        archetypeLabel: char.archetypeLabel,
+      })),
+    });
+  }
+
   // CRITICAL: Convert data URLs to HTTP endpoint URLs BEFORE sending
   // This prevents WebSocket message size limit errors (576 bytes max)
   // Data URLs are 2MB+, but HTTP endpoint URLs are only ~50 bytes
@@ -1157,25 +1245,48 @@ export function updateCast(sessionId: string, cast: Character[]): void {
     });
 
     // Send cast in chunks of 1 character at a time
-    castForWebSocket.forEach((char, index) => {
-      // Minimal message: id, p, l, i, plus n/a/t so new characters have name and traits
+    for (let index = 0; index < castForWebSocket.length; index++) {
+      const char = castForWebSocket[index];
+      
+      // CRITICAL: Log character data before chunking to debug missing fields
+      if (!char.name || !char.archetypeLabel || !char.personalityTraits || !char.hiddenMotivation) {
+        console.warn('[PartyKit] Character missing data before chunking:', {
+          characterId: char.id,
+          hasName: char.name !== undefined && char.name !== null && char.name.length > 0,
+          hasArchetype: char.archetypeLabel !== undefined && char.archetypeLabel !== null && char.archetypeLabel.length > 0,
+          hasTraits: Array.isArray(char.personalityTraits) && char.personalityTraits.length > 0,
+          hasHiddenMotivation: char.hiddenMotivation !== undefined && char.hiddenMotivation !== null && char.hiddenMotivation.length > 0,
+          nameValue: char.name,
+          archetypeValue: char.archetypeLabel,
+          traitsValue: char.personalityTraits,
+          hiddenMotivationValue: char.hiddenMotivation,
+        });
+      }
+      
+      // Minimal message: id, p, l, i, n/a/t/h/attr so new characters have name, traits, hiddenMotivation, and attributes
+      // CRITICAL: Include hiddenMotivation (h) so actors can see it on join page
+      // CRITICAL: Include attributes (attr) so Character Dossier and cards show ratings (e.g. Confidence 95/100)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const minimalChar: any = {
         id: char.id,
         p: char.participantId,
         l: char.isLocked,
         i: char.visualRepresentation?.imageUrl || '',
-        n: char.name || undefined,
-        a: char.archetypeLabel || undefined,
+        n: char.name !== undefined && char.name !== null ? char.name : undefined,
+        a: char.archetypeLabel !== undefined && char.archetypeLabel !== null ? char.archetypeLabel : undefined,
         t: Array.isArray(char.personalityTraits) && char.personalityTraits.length > 0 ? char.personalityTraits : undefined,
+        h: char.hiddenMotivation !== undefined && char.hiddenMotivation !== null && char.hiddenMotivation.length > 0 ? char.hiddenMotivation : undefined,
+        attr: Array.isArray(char.attributes) && char.attributes.length > 0 ? char.attributes : undefined,
       };
       
       if (minimalChar.p === null || minimalChar.p === undefined) delete minimalChar.p;
       if (minimalChar.l === false) delete minimalChar.l;
       if (!minimalChar.i || minimalChar.i.length === 0) delete minimalChar.i;
-      if (!minimalChar.n) delete minimalChar.n;
-      if (!minimalChar.a) delete minimalChar.a;
-      if (!minimalChar.t || minimalChar.t.length === 0) delete minimalChar.t;
+      if (minimalChar.n === undefined || minimalChar.n === null) delete minimalChar.n;
+      if (minimalChar.a === undefined || minimalChar.a === null) delete minimalChar.a;
+      if (minimalChar.t === undefined || minimalChar.t === null || (Array.isArray(minimalChar.t) && minimalChar.t.length === 0)) delete minimalChar.t;
+      if (minimalChar.h === undefined || minimalChar.h === null || minimalChar.h.length === 0) delete minimalChar.h;
+      if (minimalChar.attr === undefined || minimalChar.attr === null || (Array.isArray(minimalChar.attr) && minimalChar.attr.length === 0)) delete minimalChar.attr;
       
       const chunkMessage = JSON.stringify({
         type: 'cast:update',
@@ -1186,21 +1297,191 @@ export function updateCast(sessionId: string, cast: Character[]): void {
       });
       const chunkSize = new Blob([chunkMessage]).size;
       
+      let messageToSend = chunkMessage;
+      
       if (chunkSize > maxMessageSize) {
-        console.error('[PartyKit] Single character still too large even with minimal fields:', {
+        console.error('[PartyKit] Single character still too large even with minimal fields, creating ultra-minimal version:', {
           sessionId,
           characterId: char.id,
           chunkSizeBytes: chunkSize,
           characterFields: Object.keys(minimalChar),
         });
-        // Still try to send - might work if limit is slightly flexible
+        
+        // STRATEGY: Split large character data into multiple messages
+        // Phase 1: Send essential data (id, name, archetype, traits, image URL) - image URL is already small relative URL
+        // Phase 2: Send hiddenMotivation separately if it's too large
+        
+        // Image URL from char is already converted to small relative URL (~50 bytes) by convertCastDataUrlsToHttp
+        // char comes from castForWebSocket which has already been processed
+        // Cloudinary URLs are also kept (they're external, not stored in PartyKit)
+        const imageUrlForMessage = char.visualRepresentation?.imageUrl || '';
+        const isImageUrlSmall = !imageUrlForMessage || 
+          imageUrlForMessage.startsWith('/parties/main/') || 
+          imageUrlForMessage.includes('/image/') ||
+          isCloudinaryUrl(imageUrlForMessage) ||
+          imageUrlForMessage.length < 100;
+        
+        // Phase 1: Essential character data (without hiddenMotivation), include attributes (attr)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const essentialChar: any = {
+          id: char.id,
+          p: char.participantId || undefined,
+          l: char.isLocked || undefined,
+          n: char.name !== undefined && char.name !== null ? char.name : undefined,
+          a: char.archetypeLabel !== undefined && char.archetypeLabel !== null ? char.archetypeLabel : undefined,
+          t: Array.isArray(char.personalityTraits) && char.personalityTraits.length > 0 ? char.personalityTraits : undefined,
+          i: isImageUrlSmall && imageUrlForMessage ? imageUrlForMessage : undefined,
+          attr: Array.isArray(char.attributes) && char.attributes.length > 0 ? char.attributes : undefined,
+        };
+        
+        if (essentialChar.p === null || essentialChar.p === undefined) delete essentialChar.p;
+        if (essentialChar.l === false) delete essentialChar.l;
+        if (essentialChar.n === undefined || essentialChar.n === null) delete essentialChar.n;
+        if (essentialChar.a === undefined || essentialChar.a === null) delete essentialChar.a;
+        if (essentialChar.t === undefined || essentialChar.t === null || (Array.isArray(essentialChar.t) && essentialChar.t.length === 0)) delete essentialChar.t;
+        if (essentialChar.i === undefined || essentialChar.i === null || essentialChar.i.length === 0) delete essentialChar.i;
+        if (essentialChar.attr === undefined || essentialChar.attr === null || (Array.isArray(essentialChar.attr) && essentialChar.attr.length === 0)) delete essentialChar.attr;
+        
+        const essentialMessage = JSON.stringify({
+          type: 'cast:update',
+          data: {
+            sessionId,
+            cast: [essentialChar],
+          },
+        });
+        const essentialSize = new Blob([essentialMessage]).size;
+        
+        // If essential data fits, send it first, then send hiddenMotivation separately if needed
+        if (essentialSize <= maxMessageSize) {
+          // Send essential data first
+          setTimeout(() => {
+            sendMessageWithQueue(essentialMessage);
+          }, index * 10);
+          
+          // Send hiddenMotivation separately if it exists and is large
+          if (char.hiddenMotivation && char.hiddenMotivation.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const hiddenMotivationChar: any = {
+              id: char.id,
+              h: char.hiddenMotivation,
+            };
+            
+            const hiddenMotivationMessage = JSON.stringify({
+              type: 'cast:update',
+              data: {
+                sessionId,
+                cast: [hiddenMotivationChar],
+              },
+            });
+            const hiddenMotivationSize = new Blob([hiddenMotivationMessage]).size;
+            
+            // If hiddenMotivation message is too large, truncate it
+            if (hiddenMotivationSize > maxMessageSize) {
+              const maxLength = Math.max(100, maxMessageSize - 200); // Leave room for message overhead
+              hiddenMotivationChar.h = char.hiddenMotivation.substring(0, maxLength) + '...';
+              console.warn('[PartyKit] Truncated hiddenMotivation to fit size limit:', {
+                sessionId,
+                characterId: char.id,
+                originalLength: char.hiddenMotivation.length,
+                truncatedLength: hiddenMotivationChar.h.length,
+              });
+            }
+            
+            // Send hiddenMotivation message with a small delay after essential data
+            setTimeout(() => {
+              sendMessageWithQueue(JSON.stringify({
+                type: 'cast:update',
+                data: {
+                  sessionId,
+                  cast: [hiddenMotivationChar],
+                },
+              }));
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[PartyKit] Sent hiddenMotivation follow-up (split strategy):', {
+                  sessionId,
+                  characterId: char.id,
+                  length: hiddenMotivationChar.h.length,
+                });
+              }
+            }, index * 10 + 50); // 50ms after essential data
+          }
+          
+          // Skip the original chunk send since we're sending split messages
+          continue;
+        }
+        
+        // If essential data alone is too large, fall back to truncation strategy
+        // This should rarely happen, but handle it gracefully
+        console.error('[PartyKit] Essential character data exceeds size limit, using truncation fallback:', {
+          sessionId,
+          characterId: char.id,
+          essentialSizeBytes: essentialSize,
+          maxMessageSize,
+        });
+        
+        // Truncate name, archetype, and traits if needed
+        if (essentialChar.n && essentialChar.n.length > 50) essentialChar.n = essentialChar.n.substring(0, 50) + '...';
+        if (essentialChar.a && essentialChar.a.length > 50) essentialChar.a = essentialChar.a.substring(0, 50) + '...';
+        if (Array.isArray(essentialChar.t) && essentialChar.t.length > 3) {
+          essentialChar.t = essentialChar.t.slice(0, 3);
+        }
+        
+        const fallbackMessage = JSON.stringify({
+          type: 'cast:update',
+          data: {
+            sessionId,
+            cast: [essentialChar],
+          },
+        });
+        const fallbackSize = new Blob([fallbackMessage]).size;
+        
+        if (fallbackSize > maxMessageSize) {
+          console.error('[PartyKit] CRITICAL: Even truncated essential data exceeds size limit:', {
+            sessionId,
+            characterId: char.id,
+            fallbackSizeBytes: fallbackSize,
+            maxMessageSize,
+          });
+          // Still send it - better to try than lose data completely
+        }
+        
+        messageToSend = fallbackMessage;
+        
+        // CRITICAL: Truncation fallback omits h from essentialChar; send hiddenMotivation in follow-up
+        if (char.hiddenMotivation && char.hiddenMotivation.length > 0) {
+          const hiddenMotivationChar: { id: string; h: string } = {
+            id: char.id,
+            h: char.hiddenMotivation,
+          };
+          const hmMessage = JSON.stringify({
+            type: 'cast:update',
+            data: { sessionId, cast: [hiddenMotivationChar] },
+          });
+          if (new Blob([hmMessage]).size > maxMessageSize) {
+            const maxLength = Math.max(100, maxMessageSize - 200);
+            hiddenMotivationChar.h = char.hiddenMotivation.substring(0, maxLength) + '...';
+          }
+          setTimeout(() => {
+            sendMessageWithQueue(JSON.stringify({
+              type: 'cast:update',
+              data: { sessionId, cast: [hiddenMotivationChar] },
+            }));
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[PartyKit] Sent hiddenMotivation follow-up (truncation fallback):', {
+                sessionId,
+                characterId: char.id,
+                length: hiddenMotivationChar.h.length,
+              });
+            }
+          }, index * 10 + 50);
+        }
       }
       
       // Send with a small delay to avoid overwhelming the connection
       setTimeout(() => {
-        sendMessageWithQueue(chunkMessage);
+        sendMessageWithQueue(messageToSend);
       }, index * 10); // 10ms delay between chunks
-    });
+    }
   } else {
     // Message is small enough, send normally
     if (!isConnected) {
@@ -1699,6 +1980,53 @@ export function startPerformance(sessionId: string): void {
 }
 
 /**
+ * End performance (Director only)
+ * Transitions session to 'completed' state and moves all participants to wrap party
+ */
+export function endPerformance(sessionId: string): void {
+  if (!partySocket || partySocket.readyState !== WebSocket.OPEN) {
+    console.warn('PartyKit not connected, cannot end performance');
+    return;
+  }
+
+  partySocket.send(JSON.stringify({
+    type: 'performance:end',
+    data: { sessionId },
+  }));
+}
+
+/**
+ * End session (Director only). Sets status to expired and broadcasts to all
+ * participants so they cleanup and redirect (e.g. to vibe-selection).
+ */
+export function endSession(sessionId: string): void {
+  if (!partySocket || partySocket.readyState !== WebSocket.OPEN) {
+    console.warn('PartyKit not connected, cannot end session');
+    return;
+  }
+
+  partySocket.send(JSON.stringify({
+    type: 'session:end',
+    data: { sessionId },
+  }));
+}
+
+/**
+ * Reject assignment request or unassign character (Director only)
+ */
+export function rejectAssignment(sessionId: string, participantId: string, characterId: string): void {
+  if (!partySocket || partySocket.readyState !== WebSocket.OPEN) {
+    console.warn('PartyKit not connected, cannot reject assignment');
+    return;
+  }
+
+  partySocket.send(JSON.stringify({
+    type: 'assignment:reject',
+    data: { sessionId, participantId, characterId },
+  }));
+}
+
+/**
  * Listen for character override event
  */
 export function onCharacterOverridden(
@@ -1834,6 +2162,39 @@ export function onAssignmentApproved(
 }
 
 /**
+ * Listen for assignment rejection events
+ */
+export function onAssignmentRejected(
+  callback: (data: {
+    sessionId: string;
+    participantId: string;
+    characterId: string;
+    timestamp: number;
+  }) => void
+): () => void {
+  if (!eventListeners.has('assignment:rejected')) {
+    eventListeners.set('assignment:rejected', new Set());
+  }
+
+  const wrappedCallback: EventCallback = (data: unknown) => {
+    callback(data as {
+      sessionId: string;
+      participantId: string;
+      characterId: string;
+      timestamp: number;
+    });
+  };
+  eventListeners.get('assignment:rejected')!.add(wrappedCallback);
+
+  return () => {
+    const listeners = eventListeners.get('assignment:rejected');
+    if (listeners) {
+      listeners.delete(wrappedCallback);
+    }
+  };
+}
+
+/**
  * Listen for assignment suggestion events
  */
 export function onAssignmentSuggested(
@@ -1912,9 +2273,199 @@ export function disconnectPartyKit(): void {
     clearTimeout(reconnectTimeout);
     reconnectTimeout = null;
   }
+}
 
-  reconnectAttempts = 0;
-  isReconnecting = false;
-  connectionStatus = 'disconnected';
-  eventListeners.clear();
+/**
+ * Event replay utilities for idempotent event processing
+ */
+
+const PROCESSED_EVENTS_KEY = 'skitso:processedEvents';
+const MAX_PROCESSED_EVENTS = 1000;
+
+/**
+ * Get processed event IDs from localStorage
+ */
+function getProcessedEvents(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const stored = localStorage.getItem(PROCESSED_EVENTS_KEY);
+    if (stored) {
+      const ids = JSON.parse(stored) as string[];
+      return new Set(ids);
+    }
+  } catch (error) {
+    console.warn('[PartyKit] Failed to read processed events:', error);
+  }
+  return new Set();
+}
+
+/**
+ * Save processed event IDs to localStorage
+ */
+function saveProcessedEvents(processed: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const ids = Array.from(processed);
+    localStorage.setItem(PROCESSED_EVENTS_KEY, JSON.stringify(ids));
+  } catch (error) {
+    console.warn('[PartyKit] Failed to save processed events:', error);
+  }
+}
+
+/**
+ * Mark an event as processed
+ */
+export function markEventProcessed(eventId: string): void {
+  const processed = getProcessedEvents();
+  processed.add(eventId);
+
+  // Clean up old events (keep last MAX_PROCESSED_EVENTS)
+  if (processed.size > MAX_PROCESSED_EVENTS) {
+    const sorted = Array.from(processed).sort();
+    const toKeep = sorted.slice(-MAX_PROCESSED_EVENTS);
+    processed.clear();
+    toKeep.forEach((id) => processed.add(id));
+  }
+
+  saveProcessedEvents(processed);
+}
+
+/**
+ * Check if an event was already processed
+ */
+export function isEventProcessed(eventId: string): boolean {
+  return getProcessedEvents().has(eventId);
+}
+
+/**
+ * Check if event type is a full-state event (naturally idempotent)
+ */
+function isFullStateEvent(eventType: string): boolean {
+  return (
+    eventType === 'participant:joined' ||
+    eventType === 'participant:left' ||
+    eventType === 'cast:updated'
+  );
+}
+
+/**
+ * Check if incremental event should be applied based on current state
+ */
+function shouldApplyIncrementalEvent(
+  event: EventLogEntry,
+  currentState: {
+    participants: unknown[];
+    cast: Character[];
+    assignmentRequests?: Map<string, unknown>;
+  }
+): boolean {
+  switch (event.type) {
+    case 'assignment:requested': {
+      // Check if request already exists
+      if (currentState.assignmentRequests) {
+        const request = currentState.assignmentRequests.get(event.participantId || '');
+        if (request) {
+          // Request exists, check if it's for the same character
+          const requestData = request as { characterId?: string };
+          return requestData.characterId !== event.characterId;
+        }
+      }
+      return true; // No existing request, apply
+    }
+
+    case 'assignment:approved':
+    case 'character:assigned': {
+      // Check if cast already shows this assignment
+      const character = currentState.cast.find((c) => c.id === event.characterId);
+      return character?.participantId !== event.participantId;
+    }
+
+    case 'assignment:confirmed': {
+      // Check if character is already locked
+      const char = currentState.cast.find((c) => c.id === event.characterId);
+      return !char?.isLocked || char.participantId !== event.participantId;
+    }
+
+    case 'assignment:rejected': {
+      // Check if character is still assigned to this participant
+      const char = currentState.cast.find((c) => c.id === event.characterId);
+      return char?.participantId === event.participantId;
+    }
+
+    default:
+      return true; // Unknown events, apply to be safe
+  }
+}
+
+/**
+ * Replay events with idempotency checks
+ * Returns the number of events actually applied
+ */
+export async function replayEvents(
+  events: EventLogEntry[],
+  currentState: {
+    participants: unknown[];
+    cast: Character[];
+    assignmentRequests?: Map<string, unknown>;
+  },
+  onEvent: (event: EventLogEntry) => void
+): Promise<number> {
+  // Sort events by timestamp to ensure correct order
+  const sortedEvents = events.sort((a, b) => a.timestamp - b.timestamp);
+
+  let appliedCount = 0;
+
+  for (const event of sortedEvents) {
+    // Skip if already processed
+    if (isEventProcessed(event.id)) {
+      continue;
+    }
+
+    // For full-state events, always apply (idempotent)
+    if (isFullStateEvent(event.type)) {
+      onEvent(event);
+      markEventProcessed(event.id);
+      appliedCount++;
+      continue;
+    }
+
+    // For incremental events, check state first
+    if (shouldApplyIncrementalEvent(event, currentState)) {
+      onEvent(event);
+      markEventProcessed(event.id);
+      appliedCount++;
+    } else {
+      // Event already reflected in state, mark as processed
+      markEventProcessed(event.id);
+    }
+  }
+
+  return appliedCount;
+}
+
+/**
+ * Get last event timestamp from localStorage
+ */
+export function getLastEventTimestamp(sessionId: string): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const key = `skitso:lastEventTimestamp:${sessionId}`;
+    const stored = localStorage.getItem(key);
+    return stored ? parseInt(stored, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Save last event timestamp to localStorage
+ */
+export function setLastEventTimestamp(sessionId: string, timestamp: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const key = `skitso:lastEventTimestamp:${sessionId}`;
+    localStorage.setItem(key, timestamp.toString());
+  } catch (error) {
+    console.warn('[PartyKit] Failed to save last event timestamp:', error);
+  }
 }

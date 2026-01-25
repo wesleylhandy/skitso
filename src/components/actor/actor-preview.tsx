@@ -17,6 +17,7 @@ import { sessionCodeAtom } from '@/src/state/atoms/session-atom';
 import {
   onCharacterAssigned,
   onAssignmentApproved,
+  onAssignmentRejected,
   onAssignmentSuggested,
   onAssignmentConfirmed,
 } from '@/src/lib/partykit/client';
@@ -144,6 +145,29 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
       }
     });
 
+    const unsubscribeAssignmentRejected = onAssignmentRejected((data) => {
+      if (data.sessionId === sessionCode && data.participantId === participant.id) {
+        // Clear assignment and set status to rejected
+        setParticipant({
+          ...participant,
+          characterAssignment: null,
+          assignmentStatus: 'rejected',
+          requestedCharacterId: null,
+          rejectedCharacterId: data.characterId,
+        });
+        
+        // Update cast to remove assignment
+        setCast((currentCast) => {
+          return currentCast.map((char) => {
+            if (char.id === data.characterId && char.participantId === participant.id) {
+              return { ...char, participantId: null, isLocked: false };
+            }
+            return char;
+          });
+        });
+      }
+    });
+
     const unsubscribeAssignmentConfirmed = onAssignmentConfirmed((data) => {
       if (data.sessionId === sessionCode) {
         setCast((currentCast) => {
@@ -169,6 +193,7 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
       unsubscribeCharacterAssigned();
       unsubscribeAssignmentApproved();
       unsubscribeAssignmentSuggested();
+      unsubscribeAssignmentRejected();
       unsubscribeAssignmentConfirmed();
     };
   }, [sessionCode, participant, cast, setCast, setParticipant, onAssignmentLocked]);
@@ -190,6 +215,10 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
   // Check if actor has requested a character (only if participant belongs to current session)
   const hasRequested = participantBelongsToCurrentSession &&
     participant?.assignmentStatus === 'requested';
+
+  // Check if actor's request was rejected (only if participant belongs to current session)
+  const hasRejected = participantBelongsToCurrentSession &&
+    participant?.assignmentStatus === 'rejected';
 
   // Get available characters (not locked to other participants)
   // Only show if participant belongs to current session
@@ -293,7 +322,10 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
             Your Character
           </h2>
           {participant.characterAssignment && (
-            <CharacterCard character={participant.characterAssignment} />
+            <CharacterCard 
+              character={participant.characterAssignment} 
+              isLockedToCurrentUser={true}
+            />
           )}
           <p className="mt-4 text-sm" style={{ color: visualTokens.textColor, opacity: 0.8 }}>
             Your assignment is locked. Waiting for director to start the performance...
@@ -370,6 +402,14 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
         </div>
       )}
 
+      {hasRejected && (
+        <div className="p-4 border rounded-lg" style={{ borderColor: visualTokens.primaryColor }}>
+          <p className="text-sm" style={{ color: visualTokens.textColor }}>
+            Your assignment request was rejected. You can request a different character.
+          </p>
+        </div>
+      )}
+
       <div>
         <h3 className="text-xl font-semibold mb-4" style={{ color: visualTokens.textColor }}>
           Available Characters
@@ -442,7 +482,7 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
               </h2>
               <button
                 onClick={() => setIsDossierOpen(false)}
-                className="px-4 py-2 rounded-lg font-semibold transition-opacity hover:opacity-90"
+                className="px-4 py-2 rounded-lg font-semibold transition-opacity hover:opacity-90 cursor-pointer"
                 style={{
                   backgroundColor: visualTokens.primaryColor,
                   color: visualTokens.bgColor,

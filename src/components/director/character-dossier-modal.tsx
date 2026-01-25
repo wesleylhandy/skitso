@@ -25,7 +25,7 @@ interface CharacterDossierModalProps {
  * hidden motivations to help with assignment decisions.
  */
 export function CharacterDossierModal({ character, isOpen, onClose }: CharacterDossierModalProps) {
-  const { visualTokens } = useVibe();
+  const { visualTokens, getSectionTitle } = useVibe();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Handle dialog open/close and body scroll lock
@@ -145,6 +145,30 @@ export function CharacterDossierModal({ character, isOpen, onClose }: CharacterD
       }}
     >
       <div className="flex flex-col h-full max-h-[90vh] overflow-hidden">
+        {/* Fixed Header with Close Button */}
+        <div 
+          className="flex justify-between items-center p-6 border-b shrink-0" 
+          style={{ borderColor: visualTokens.primaryColor }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 
+            className="text-2xl font-bold" 
+            style={{ color: visualTokens.primaryColor }}
+          >
+            {getSectionTitle('characterDossier')}
+          </h2>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg font-semibold transition-opacity hover:opacity-90 cursor-pointer"
+            style={{
+              backgroundColor: visualTokens.primaryColor,
+              color: visualTokens.bgColor,
+              pointerEvents: 'auto',
+            }}
+          >
+            Close
+          </button>
+        </div>
         {/* Modal Content - Scrollable */}
         <div className="flex-1 overflow-y-auto overscroll-contain" style={{ color: visualTokens.textColor }}>
           <CharacterDossier character={character} onBack={onClose} />

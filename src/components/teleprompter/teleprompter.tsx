@@ -27,13 +27,14 @@ import {
   advancePerformance,
   getConnectionStatus,
   onConnectionStatusChange,
-  updateSessionState,
+  endPerformance,
 } from '@/src/lib/partykit/client';
 import type { ConnectionStatus } from '@/src/lib/partykit/client';
 import { ConnectionStatusBadge } from '@/src/components/ui/connection-status-badge';
 
 interface TeleprompterProps {
   sessionCode: string;
+  participantsCount?: number;
 }
 
 /**
@@ -41,17 +42,18 @@ interface TeleprompterProps {
  * 
  * Main teleprompter display with synchronized script advancement.
  */
-export function Teleprompter({ sessionCode }: TeleprompterProps) {
+export function Teleprompter({ sessionCode, participantsCount }: TeleprompterProps) {
   const script = useAtomValue(currentScriptAtom);
   const participant = useAtomValue(participantAtom);
   const [progress, setProgress] = useAtom(performanceProgressAtom);
   const setSessionState = useSetAtom(sessionStateAtom);
   const storedSessionCode = useAtomValue(sessionCodeAtom);
   const router = useRouter();
-  const { visualTokens, getButtonLabel } = useVibe();
+  const { visualTokens, getButtonLabel, getSectionTitle } = useVibe();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLDivElement>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [readThroughBannerDismissed, setReadThroughBannerDismissed] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(getConnectionStatus());
   const [hasExceededExpectedDuration, setHasExceededExpectedDuration] = useState(false);
   // Track previous startedAt to detect changes and avoid synchronous setState in effect
@@ -133,21 +135,62 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     };
   }, [sessionCode, setProgress]);
 
-  // Auto-scroll to current line
+  // Auto-scroll to current line - keep current action at top
   useEffect(() => {
-    if (currentLineRef.current && scrollContainerRef.current) {
+    const currentIndex = currentLineIndex;
+    console.log('[Teleprompter] Scroll effect triggered for line index:', currentIndex);
+    
+    // Wait for DOM to update after state change, then find and scroll to current line
+    const scrollToCurrentLine = () => {
       const container = scrollContainerRef.current;
-      const lineElement = currentLineRef.current;
-      const containerRect = container.getBoundingClientRect();
-      const lineRect = lineElement.getBoundingClientRect();
+      if (!container) {
+        console.warn('[Teleprompter] Scroll container not found');
+        return;
+      }
 
-      // Calculate scroll position to center the current line
-      const scrollTop = lineElement.offsetTop - containerRect.height / 2 + lineRect.height / 2;
+      // Try ref first (fastest), then fall back to data attribute lookup
+      let lineElement: HTMLElement | null = null;
+      
+      // Check if ref points to the correct line
+      if (currentLineRef.current) {
+        const refIndex = currentLineRef.current.getAttribute('data-line-index');
+        if (refIndex === String(currentIndex)) {
+          lineElement = currentLineRef.current;
+        }
+      }
+      
+      // Fall back to querySelector if ref doesn't match or isn't set
+      if (!lineElement) {
+        lineElement = container.querySelector(
+          `[data-line-index="${currentIndex}"]`
+        ) as HTMLElement | null;
+      }
+      
+      if (!lineElement) {
+        console.warn(`[Teleprompter] Line element not found for index ${currentIndex}, retrying...`);
+        // Element not found yet, try again after a short delay
+        // This can happen if React hasn't finished rendering
+        setTimeout(() => {
+          const retryElement = container.querySelector(
+            `[data-line-index="${currentIndex}"]`
+          ) as HTMLElement | null;
+          if (retryElement) {
+            scrollElementToTop(container, retryElement);
+          } else {
+            console.error(`[Teleprompter] Line element still not found for index ${currentIndex} after retry`);
+          }
+        }, 50);
+        return;
+      }
 
-      // Apply vibe-appropriate scrolling behavior
+      scrollElementToTop(container, lineElement);
+    };
+
+    const scrollElementToTop = (container: HTMLElement, lineElement: HTMLElement) => {
+      // Determine scroll behavior
       let scrollBehavior: ScrollBehavior = visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth';
 
-      // Respect reduced motion preferences from OS / ThemeProvider
+      // Respect reduced motion preferences
       try {
         if (typeof window !== 'undefined') {
           const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -161,25 +204,58 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
           }
         }
       } catch {
-        // If matchMedia is not available or throws, fall back to existing behavior
+        // Fall back to existing behavior
       }
 
-      container.scrollTo({
-        top: scrollTop,
-        behavior: scrollBehavior,
+      // Use scrollIntoView - the simplest and most reliable method
+      // block: 'start' scrolls the element to the top of the scroll container
+      // This works even when the element is off-screen
+      const behavior = scrollBehavior === 'smooth' ? 'smooth' : 'auto';
+      
+      console.log('[Teleprompter] Calling scrollIntoView for line', {
+        currentIndex,
+        behavior,
+        containerScrollTop: container.scrollTop,
       });
-    }
-    }, [safeProgress.currentLineIndex, visualTokens.animationStyle]);
+      
+      lineElement.scrollIntoView({ 
+        block: 'start', 
+        inline: 'nearest',
+        behavior: behavior as ScrollBehavior
+      });
+
+      console.log('[Teleprompter] scrollIntoView completed', {
+        currentIndex,
+        containerScrollTop: container.scrollTop,
+      });
+    };
+
+      // Use double requestAnimationFrame to ensure:
+      // 1. React has finished rendering and DOM is updated
+      // 2. Browser has completed layout calculation
+      requestAnimationFrame(() => {
+        requestAnimationFrame(scrollToCurrentLine);
+      });
+    }, [currentLineIndex, visualTokens.animationStyle]);
 
   // Handle start performance (Director only)
   const handleStart = useCallback(() => {
-    if (participant?.role !== 'director') return;
-    if (connectionStatus !== 'connected') return;
-    if (!progress) return;
+    if (participant?.role !== 'director') {
+      console.warn('[Teleprompter] Only director can start performance');
+      return;
+    }
+    if (connectionStatus !== 'connected') {
+      console.warn('[Teleprompter] Not connected, cannot start performance');
+      return;
+    }
+    if (!safeProgress) {
+      console.warn('[Teleprompter] No progress available, cannot start performance');
+      return;
+    }
 
     const startedAt = Date.now();
     const updatedProgress: PerformanceProgress = {
-      ...progress,
+      ...safeProgress,
       startedAt,
       pausedAt: null,
       advancementControl: {
@@ -192,13 +268,13 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     setProgress(updatedProgress);
 
     advancePerformance(sessionCode, {
-      currentLineIndex: progress.currentLineIndex,
-      currentScene: progress.currentScene,
+      currentLineIndex: safeProgress.currentLineIndex,
+      currentScene: safeProgress.currentScene,
       startedAt,
       pausedAt: null,
-      completedLines: progress.completedLines,
+      completedLines: safeProgress.completedLines,
     });
-  }, [participant, progress, sessionCode, setProgress, connectionStatus]);
+  }, [participant, safeProgress, sessionCode, setProgress, connectionStatus]);
 
   // Handle script advancement
   const handleAdvance = useCallback(() => {
@@ -251,7 +327,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       ...progress,
       pausedAt,
       advancementControl: {
-        ...progress.advancementControl,
+        ...progress?.advancementControl,
         directorOverride: true,
         lastAdvancedBy: participant.id,
         lastAdvancedAt: Date.now(),
@@ -344,8 +420,12 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     // even if the performance ends earlier than the script length (T192).
     setSessionState('completed');
 
-    if (storedSessionCode && participant?.role === 'director') {
-      updateSessionState(storedSessionCode, 'completed');
+    const targetSessionCode = storedSessionCode || sessionCode;
+
+    // If director, use endPerformance to broadcast state change to all participants
+    // This ensures all participants transition to wrap party
+    if (targetSessionCode && participant?.role === 'director') {
+      endPerformance(targetSessionCode);
     }
 
     // Reset local performance progress so subsequent sessions start clean.
@@ -362,8 +442,6 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       },
     });
 
-    const targetSessionCode = storedSessionCode || sessionCode;
-
     if (targetSessionCode) {
       router.push(`/wrap-party/${targetSessionCode}`);
     } else {
@@ -376,7 +454,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
-        if (!isPaused && !safeProgress.advancementControl.directorOverride) {
+        if (!isPaused && !safeProgress?.advancementControl?.directorOverride) {
           handleAdvance();
         }
       }
@@ -527,12 +605,48 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
               {getButtonLabel('exit') || 'Exit'}
             </button>
           </div>
+          {/* Read-through mode banner (solo director, screen-share) */}
+          {participantsCount === 1 && !readThroughBannerDismissed && (
+            <div
+              className="mt-3 flex items-center justify-between gap-4 rounded-lg px-4 py-2"
+              style={{
+                backgroundColor: 'var(--color-info)',
+                color: 'var(--color-bg)',
+                opacity: 0.9,
+              }}
+              role="status"
+            >
+              <p className="text-sm font-medium">
+                {getSectionTitle('readThroughBanner')}
+              </p>
+              <button
+                type="button"
+                onClick={() => setReadThroughBannerDismissed(true)}
+                className="shrink-0 rounded px-2 py-1 text-sm font-semibold transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                style={{
+                  color: 'var(--color-bg)',
+                  backgroundColor: 'transparent',
+                  minHeight: '44px',
+                  minWidth: '44px',
+                }}
+                aria-label="Dismiss read-through banner"
+              >
+                {getButtonLabel('cancel')}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Header for Actors (non-fixed) */}
+      {/* Sticky Header for Actors */}
       {!isDirector && (
-        <div className="p-4 border-b" style={{ borderColor: 'var(--color-primary)' }}>
+        <div
+          className="sticky top-0 z-10 border-b p-4"
+          style={{
+            backgroundColor: 'var(--color-bg)',
+            borderColor: 'var(--color-primary)',
+          }}
+        >
           <div className="flex items-start justify-between gap-4 mb-2">
             <div className="flex-1">
               <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
@@ -550,6 +664,31 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
               />
             </div>
           </div>
+          {/* Advancement Controls for Actors */}
+          <div className="flex items-center justify-center gap-4 pt-2">
+            <AdvanceControl
+              onAdvance={handleAdvance}
+              onPause={undefined}
+              onResume={undefined}
+              canAdvance={canAdvance}
+              isPaused={isPaused}
+            />
+            {/* Exit Button for Actors */}
+            <button
+              onClick={() => setShowExitConfirm(true)}
+              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+              style={{
+                backgroundColor: 'var(--color-error, #ef4444)',
+                color: 'var(--color-bg)',
+                borderRadius: visualTokens.borderRadius,
+                fontFamily: visualTokens.headerFont,
+                cursor: 'pointer',
+              }}
+              aria-label={getButtonLabel('exit') || 'Exit Performance'}
+            >
+              {getButtonLabel('exit') || 'Exit'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -562,10 +701,10 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
         }}
       >
         <div className="max-w-4xl mx-auto space-y-4">
-          {scriptLines.map((line, index) => {
-            const isCurrent = index === safeProgress.currentLineIndex;
-            const isCompleted = safeProgress.completedLines.includes(index);
-            const isUpcoming = upcomingLines.some((l) => l.index === index);
+          {scriptLines.map((line, arrayIndex) => {
+            const isCurrent = arrayIndex === safeProgress.currentLineIndex;
+            const isCompleted = safeProgress.completedLines.includes(arrayIndex);
+            const isUpcoming = upcomingLines.some((l) => l === line);
             const isMyLine =
               line.type === 'dialogue' && line.characterName === participant?.characterAssignment?.name;
             
@@ -575,6 +714,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
             return (
               <div
                 key={line.index}
+                data-line-index={arrayIndex}
                 ref={isCurrent ? currentLineRef : null}
                 className={`p-4 rounded transition-all relative ${
                   isCurrent
@@ -673,35 +813,6 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
         </div>
       </div>
 
-      {/* Advancement Controls (Actors only - Director controls are in fixed header) */}
-      {!isDirector && (
-        <div className="border-t p-4" style={{ borderColor: 'var(--color-primary)' }}>
-          <div className="flex items-center justify-center gap-4">
-            <AdvanceControl
-              onAdvance={handleAdvance}
-              onPause={undefined}
-              onResume={undefined}
-              canAdvance={canAdvance}
-              isPaused={isPaused}
-            />
-            {/* Exit Button for Actors */}
-            <button
-              onClick={() => setShowExitConfirm(true)}
-              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
-              style={{
-                backgroundColor: 'var(--color-error, #ef4444)',
-                color: 'var(--color-bg)',
-                borderRadius: visualTokens.borderRadius,
-                fontFamily: visualTokens.headerFont,
-                cursor: 'pointer',
-              }}
-              aria-label={getButtonLabel('exit') || 'Exit Performance'}
-            >
-              {getButtonLabel('exit') || 'Exit'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Exit Confirmation Modal */}
       <ConfirmationModal

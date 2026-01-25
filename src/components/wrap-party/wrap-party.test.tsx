@@ -1,9 +1,8 @@
 /**
  * WrapParty lifecycle tests
  *
- * Verifies that:
- * - PartyKit state:recovered hydrates vibe + wrapPartyData
- * - Completion triggers one-time client-side cleanup
+ * Verifies that PartyKit state:recovered hydrates vibe + wrapPartyData.
+ * Cleanup is deferred until user explicitly leaves (e.g. "Start new skit").
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -19,19 +18,28 @@ import type { WrapPartyData } from '@/src/state/types/session';
 
 const store = getDefaultStore();
 
-// Mock useVibe for stable styling + text
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush, replace: vi.fn() }),
+}));
+
 vi.mock('@/src/lib/hooks/use-vibe', () => ({
   useVibe: () => ({
     visualTokens: {
       bgColor: '#000000',
       primaryColor: '#ffffff',
       bodyFont: 'system-ui',
+      errorColor: '#ef4444',
     },
     getSectionTitle: (key: string) => key,
+    getButtonLabel: (key: string) => key,
   }),
 }));
 
-// PartyKit client spies
+vi.mock('@/src/lib/utils/session-cleanup', () => ({
+  cleanupOnWrapPartyCompletion: vi.fn(),
+}));
+
 const addEventListenerSpy = vi.fn();
 const mockClient = {
   readyState: WebSocket.OPEN,
@@ -43,12 +51,11 @@ const mockClient = {
 vi.mock('@/src/lib/partykit/client', () => ({
   initializePartyKitClient: vi.fn(() => mockClient),
   getPartyKitClient: vi.fn(() => mockClient),
-}));
-
-// Spy cleanup helper
-const cleanupSpy = vi.fn();
-vi.mock('@/src/lib/utils/session-cleanup', () => ({
-  cleanupOnWrapPartyCompletion: (sessionId: string) => cleanupSpy(sessionId),
+  onSessionStateUpdate: vi.fn(() => vi.fn()),
+  fetchSessionState: vi.fn(),
+  updateSessionState: vi.fn(),
+  endSession: vi.fn(),
+  disconnectPartyKit: vi.fn(),
 }));
 
 describe('WrapParty lifecycle', () => {
@@ -64,10 +71,9 @@ describe('WrapParty lifecycle', () => {
     addEventListenerSpy.mockReset();
   });
 
-  it('hydrates from PartyKit state:recovered and triggers cleanup once for completed session', async () => {
+  it('hydrates from PartyKit state:recovered (vibe + wrapPartyData)', async () => {
     render(<WrapParty sessionCode="WRAP1234" />);
 
-    // Should register message listener
     expect(addEventListenerSpy).toHaveBeenCalledWith(
       'message',
       expect.any(Function),
@@ -85,7 +91,6 @@ describe('WrapParty lifecycle', () => {
       createdAt: Date.now(),
     };
 
-    // Simulate state:recovered from PartyKit
     onMessage({
       data: JSON.stringify({
         type: 'state:recovered',
@@ -98,29 +103,9 @@ describe('WrapParty lifecycle', () => {
     } as MessageEvent);
 
     await waitFor(() => {
-      // Atoms should be hydrated
       expect(store.get(vibeAtom)).toBe('INDIE_A24');
       expect(store.get(wrapPartyDataAtom)?.sessionId).toBe('WRAP1234');
     });
-
-    // Completion + data should schedule cleanup
-    await waitFor(() => {
-      expect(cleanupSpy).toHaveBeenCalledWith('WRAP1234');
-    });
-
-    // And only once, even if we re-fire a recovered message
-    onMessage({
-      data: JSON.stringify({
-        type: 'state:recovered',
-        data: {
-          sessionId: 'WRAP1234',
-          vibeContext: 'INDIE_A24',
-          wrapPartyData: wrapData,
-        },
-      }),
-    } as MessageEvent);
-
-    expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 });
 

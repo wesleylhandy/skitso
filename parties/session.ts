@@ -43,6 +43,12 @@ interface LogEntry {
     vibeContext?: VibeType;
     path?: string;
     characterId?: string;
+    eventType?: string;
+    eventId?: string;
+    logSize?: number;
+    since?: number;
+    totalEvents?: number;
+    filteredEvents?: number;
     error?: {
       name: string;
       message: string;
@@ -247,6 +253,18 @@ interface ParticipantData {
 }
 
 /**
+ * Event log entry for tracking session events
+ */
+interface EventLogEntry {
+  id: string; // Unique event ID: `${timestamp}-${type}-${participantId}-${characterId?}`
+  timestamp: number;
+  type: string;
+  data: unknown;
+  participantId?: string;
+  characterId?: string;
+}
+
+/**
  * Message types for PartyKit communication
  */
 type Message =
@@ -258,16 +276,43 @@ type Message =
   | { type: 'session:state:update'; data: { sessionId: string; status: SessionStatus } }
   | { type: 'performance:advance'; data: { sessionId: string; progress: { currentLineIndex: number; currentScene: number; startedAt: number | null; pausedAt: number | null; completedLines: number[] } } }
   | { type: 'performance:start'; data: { sessionId: string } }
+  | { type: 'performance:end'; data: { sessionId: string } }
+  | { type: 'session:end'; data: { sessionId: string } }
   | { type: 'wrap-party:vote'; data: { sessionId: string; vote: Vote } }
   | { type: 'wrap-party:update'; data: { sessionId: string; wrapPartyData: WrapPartyData } }
   | { type: 'character:override'; data: { sessionId: string; characterId: string; participantId: string | null } }
   | { type: 'character:assign'; data: { sessionId: string; characterId: string; participantId: string } }
   | { type: 'assignment:request'; data: { sessionId: string; participantId: string; characterId: string } }
   | { type: 'assignment:approve'; data: { sessionId: string; participantId: string; characterId: string } }
+  | { type: 'assignment:reject'; data: { sessionId: string; participantId: string; characterId: string } }
   | { type: 'assignment:suggest'; data: { sessionId: string; participantId: string; suggestedCharacterId: string } }
   | { type: 'assignment:confirm'; data: { sessionId: string; participantId: string; characterId: string } }
   | { type: 'state:recover'; data: { sessionId?: string; timestamp: number } }
   | { type: 'generation:progress'; data: { sessionId: string; phase: string; message: string } };
+
+/**
+ * Event log configuration
+ * Keep events while room is active (24 hours = session lifetime)
+ * Increased limits to support full event replay during session
+ */
+const MAX_EVENT_LOG_SIZE = 1000; // Keep last 1000 events (increased from 100)
+const MAX_EVENT_LOG_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours (session lifetime, increased from 1 hour)
+const MAX_EVENT_LOG_SIZE_ACTIVE = 10000; // Larger limit for active rooms (10x normal)
+
+/**
+ * Generate unique event ID
+ */
+function generateEventId(
+  timestamp: number,
+  type: string,
+  participantId?: string,
+  characterId?: string
+): string {
+  const parts = [timestamp.toString(), type];
+  if (participantId) parts.push(participantId);
+  if (characterId) parts.push(characterId);
+  return parts.join('-');
+}
 
 /**
  * Notify Next.js to delete Cloudinary images for a closed session (room).
@@ -303,6 +348,74 @@ export default class SessionServer implements Party.Server {
   constructor(readonly room: Party.Room) { }
 
   /**
+   * Log an event to the event log
+   */
+  private async logEvent(
+    sessionId: string,
+    type: string,
+    data: unknown,
+    participantId?: string,
+    characterId?: string
+  ): Promise<void> {
+    try {
+      const timestamp = Date.now();
+      const eventId = generateEventId(timestamp, type, participantId, characterId);
+
+      const event: EventLogEntry = {
+        id: eventId,
+        timestamp,
+        type,
+        data,
+        participantId,
+        characterId,
+      };
+
+      // Get existing event log
+      const eventLogKey = `events:${sessionId}`;
+      const existingLog = await this.room.storage.get<EventLogEntry[]>(eventLogKey) || [];
+
+      // Add new event
+      const updatedLog = [...existingLog, event];
+
+      // Check if room is active (not expired) to determine cleanup strategy
+      const sessionState = await this.getSession(sessionId);
+      const now = Date.now();
+      const isRoomActive = sessionState && now < sessionState.expiresAt;
+
+      // Clean up old events based on room activity
+      let filteredLog: EventLogEntry[];
+      if (isRoomActive) {
+        // While room is active, keep more events and only filter by age
+        // This ensures full event replay during session lifetime
+        filteredLog = updatedLog
+          .filter((e) => now - e.timestamp < MAX_EVENT_LOG_AGE_MS)
+          .slice(-MAX_EVENT_LOG_SIZE_ACTIVE);
+      } else {
+        // Room expired, use normal limits
+        filteredLog = updatedLog
+          .filter((e) => now - e.timestamp < MAX_EVENT_LOG_AGE_MS)
+          .slice(-MAX_EVENT_LOG_SIZE);
+      }
+
+      // Save updated log
+      await this.room.storage.put(eventLogKey, filteredLog);
+
+      Logger.debug('Event logged', {
+        sessionId,
+        eventType: type,
+        eventId,
+        logSize: filteredLog.length,
+      });
+    } catch (error) {
+      Logger.error('Failed to log event', error as Error, {
+        sessionId,
+        eventType: type,
+      });
+      // Don't throw - event logging failure shouldn't break the flow
+    }
+  }
+
+  /**
    * Handle new connection
    */
   onConnect(connection: Party.Connection) {
@@ -329,46 +442,24 @@ export default class SessionServer implements Party.Server {
         (p) => p.connectionId === connection.id
       );
 
-      if (disconnectedParticipant) {
-        // Check if director is leaving during performance
-        const isDirector = disconnectedParticipant.role === 'director';
-        const isPerforming = sessionState.status === 'performing';
+        if (disconnectedParticipant) {
+          // Check if director is leaving during performance
+          const isDirector = disconnectedParticipant.role === 'director';
+          const isPerforming = sessionState.status === 'performing';
 
-        if (isDirector && isPerforming) {
-          // Director exited during performance - change state back to casting
-          Logger.info('Director exited during performance, changing state to casting', {
-            sessionId,
-            connectionId: connection.id,
-            participantId: disconnectedParticipant.participantId,
-          });
-
-          sessionState.status = 'casting';
-          sessionState.lastActivity = Date.now();
-
-          // Save updated session state
-          await this.room.storage.put(`session:${sessionId}`, {
-            ...sessionState,
-            participants: Array.from(sessionState.participants.entries()),
-          });
-
-          // Broadcast state change to all participants
-          this.room.broadcast(JSON.stringify({
-            type: 'session:state:updated',
-            data: {
+          if (isDirector && isPerforming) {
+            // Director disconnected during performance - allow performance to continue
+            // Actors can continue advancing the script independently
+            // Director can reconnect and resume control
+            Logger.info('Director disconnected during performance, performance continues', {
               sessionId,
-              status: 'casting',
-              vibeContext: sessionState.vibeContext,
-              vibeLockedAt: sessionState.vibeLockedAt ?? null,
-              timestamp: Date.now(),
-            },
-          }));
+              connectionId: connection.id,
+              participantId: disconnectedParticipant.participantId,
+            });
+            // Do NOT change state - performance continues
+          }
 
-          Logger.info('Session state changed to casting and broadcasted', {
-            sessionId,
-          });
-        }
-
-        // Remove participant from session
+          // Remove participant from session
         sessionState.participants.delete(disconnectedParticipant.participantId);
         sessionState.lastActivity = Date.now();
 
@@ -443,6 +534,12 @@ export default class SessionServer implements Party.Server {
         case 'performance:start':
           await this.handlePerformanceStart(msg.data, sender);
           break;
+        case 'performance:end':
+          await this.handlePerformanceEnd(msg.data, sender);
+          break;
+        case 'session:end':
+          await this.handleSessionEnd(msg.data, sender);
+          break;
         case 'wrap-party:vote':
           await this.handleWrapPartyVote(msg.data);
           break;
@@ -460,6 +557,9 @@ export default class SessionServer implements Party.Server {
           break;
         case 'assignment:approve':
           await this.handleAssignmentApprove(msg.data, sender);
+          break;
+        case 'assignment:reject':
+          await this.handleAssignmentReject(msg.data, sender);
           break;
         case 'assignment:suggest':
           await this.handleAssignmentSuggest(msg.data, sender);
@@ -717,18 +817,38 @@ export default class SessionServer implements Party.Server {
 
     const roomId = this.room.id;
 
+    // Log incoming character data to debug missing fields
+    const incomingCharDetails = cast.map((c) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cAny = c as any;
+      return {
+        id: c.id,
+        hasAbbrevName: cAny.n !== undefined,
+        hasFullName: c.name !== undefined,
+        name: cAny.n || c.name || 'MISSING',
+        hasAbbrevArchetype: cAny.a !== undefined,
+        hasFullArchetype: c.archetypeLabel !== undefined,
+        archetypeLabel: cAny.a || c.archetypeLabel || 'MISSING',
+        hasAbbrevTraits: cAny.t !== undefined,
+        hasFullTraits: c.personalityTraits !== undefined,
+        traitsCount: Array.isArray(cAny.t || c.personalityTraits) ? (cAny.t || c.personalityTraits).length : 0,
+        hasAbbrevHiddenMotivation: cAny.h !== undefined,
+        hasFullHiddenMotivation: c.hiddenMotivation !== undefined,
+        hiddenMotivation: cAny.h || c.hiddenMotivation || 'MISSING',
+        hasImage: Boolean(c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0),
+      };
+    });
+    
+    const hasAnyHiddenMotivation = incomingCharDetails.some(
+      (d) => d.hasAbbrevHiddenMotivation || d.hasFullHiddenMotivation
+    );
     console.log('[PartyKit Server] handleCastUpdate called:', {
       sessionId,
       roomId,
       castLength: cast.length,
       charactersWithImages: cast.filter((c) => c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0).length,
-      imageUrlDetails: cast.map((c) => ({
-        id: c.id,
-        name: c.name,
-        hasImage: Boolean(c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0),
-        imageUrlType: c.visualRepresentation?.imageUrl?.startsWith('data:') ? 'data-url' : c.visualRepresentation?.imageUrl?.startsWith('http') ? 'http-url' : 'none',
-        imageUrlLength: c.visualRepresentation?.imageUrl?.length || 0,
-      })),
+      hasAnyHiddenMotivation,
+      incomingCharacterDetails: incomingCharDetails,
     });
 
     // Verify room ID matches session ID
@@ -829,25 +949,34 @@ export default class SessionServer implements Party.Server {
       const existingChar = existingCastMap.get(char.id);
       
       // Handle abbreviated/minimal character format (for WebSocket size limits)
-      // Support both full Character format and minimal format with abbreviated keys (n=name, a=archetypeLabel, t=personalityTraits)
+      // Support full format and abbreviated keys: n,a,t,h,attr (name, archetypeLabel, personalityTraits, hiddenMotivation, attributes)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const charAny = char as any;
       const participantId = charAny.p !== undefined ? charAny.p : (char.participantId !== undefined ? char.participantId : undefined);
       const isLocked = charAny.l !== undefined ? charAny.l : (char.isLocked !== undefined ? char.isLocked : undefined);
       const imageUrl = charAny.i !== undefined ? charAny.i : (char.visualRepresentation?.imageUrl !== undefined ? char.visualRepresentation.imageUrl : undefined);
+      
+      const hasIncomingName = charAny.n !== undefined || char.name !== undefined;
+      const hasIncomingArchetype = charAny.a !== undefined || char.archetypeLabel !== undefined;
+      const hasIncomingTraits = charAny.t !== undefined || char.personalityTraits !== undefined;
+      const hasIncomingHiddenMotivation = charAny.h !== undefined || char.hiddenMotivation !== undefined;
+      const hasIncomingAttributes = charAny.attr !== undefined || (char.attributes !== undefined && Array.isArray(char.attributes));
+      
       const incomingName = charAny.n !== undefined ? charAny.n : char.name;
       const incomingArchetype = charAny.a !== undefined ? charAny.a : char.archetypeLabel;
       const incomingTraits = charAny.t !== undefined ? charAny.t : char.personalityTraits;
+      const incomingHiddenMotivation = charAny.h !== undefined ? charAny.h : char.hiddenMotivation;
+      const incomingAttributes = charAny.attr !== undefined ? charAny.attr : char.attributes;
       
-      // Merge: Use incoming values if provided (non-empty), otherwise use existing
+      // Merge: Use incoming values ONLY if they're explicitly provided AND non-empty, otherwise preserve existing
       const mergedChar: Character = existingChar ? {
         ...existingChar,
         participantId: participantId !== undefined ? participantId : existingChar.participantId,
         isLocked: isLocked !== undefined ? isLocked : existingChar.isLocked,
-        name: incomingName && String(incomingName).length > 0 ? String(incomingName) : existingChar.name,
-        archetypeLabel: incomingArchetype && String(incomingArchetype).length > 0 ? String(incomingArchetype) : existingChar.archetypeLabel,
-        personalityTraits: Array.isArray(incomingTraits) && incomingTraits.length > 0 ? incomingTraits : existingChar.personalityTraits,
-        hiddenMotivation: char.hiddenMotivation && char.hiddenMotivation.length > 0 ? char.hiddenMotivation : existingChar.hiddenMotivation,
+        name: hasIncomingName && incomingName && String(incomingName).length > 0 ? String(incomingName) : existingChar.name,
+        archetypeLabel: hasIncomingArchetype && incomingArchetype && String(incomingArchetype).length > 0 ? String(incomingArchetype) : existingChar.archetypeLabel,
+        personalityTraits: hasIncomingTraits && Array.isArray(incomingTraits) && incomingTraits.length > 0 ? incomingTraits : existingChar.personalityTraits,
+        hiddenMotivation: hasIncomingHiddenMotivation && incomingHiddenMotivation && String(incomingHiddenMotivation).length > 0 ? String(incomingHiddenMotivation) : existingChar.hiddenMotivation,
         visualRepresentation: {
           imageUrl: '', // Will be set below
           imagePrompt: char.visualRepresentation?.imagePrompt && char.visualRepresentation.imagePrompt.length > 0 
@@ -855,23 +984,31 @@ export default class SessionServer implements Party.Server {
             : existingChar.visualRepresentation?.imagePrompt || '',
         },
         dialogueLines: char.dialogueLines && char.dialogueLines.length > 0 ? char.dialogueLines : existingChar.dialogueLines,
-        attributes: char.attributes && char.attributes.length > 0 ? char.attributes : existingChar.attributes,
+        attributes: hasIncomingAttributes && Array.isArray(incomingAttributes) && incomingAttributes.length > 0 ? incomingAttributes : existingChar.attributes,
       } : {
-        // No existing character - use incoming (full or abbreviated n/a/t) or defaults
+        // No existing character - use incoming (full or abbreviated n/a/t/attr) or defaults
         id: char.id,
         sessionId: char.sessionId || sessionId,
         participantId: participantId !== undefined ? participantId : null,
         isLocked: isLocked !== undefined ? isLocked : false,
-        name: incomingName && String(incomingName).length > 0 ? String(incomingName) : `Character ${char.id}`,
-        archetypeLabel: incomingArchetype && String(incomingArchetype).length > 0 ? String(incomingArchetype) : '',
-        personalityTraits: Array.isArray(incomingTraits) ? incomingTraits : [],
-        hiddenMotivation: char.hiddenMotivation || '',
+        name: hasIncomingName && incomingName && String(incomingName).length > 0 
+          ? String(incomingName) 
+          : `Character ${char.id}`,
+        archetypeLabel: hasIncomingArchetype && incomingArchetype && String(incomingArchetype).length > 0 
+          ? String(incomingArchetype) 
+          : '',
+        personalityTraits: hasIncomingTraits && Array.isArray(incomingTraits) && incomingTraits.length > 0 
+          ? incomingTraits 
+          : [],
+        hiddenMotivation: hasIncomingHiddenMotivation && incomingHiddenMotivation && String(incomingHiddenMotivation).length > 0 
+          ? String(incomingHiddenMotivation) 
+          : '',
         visualRepresentation: {
           imageUrl: '',
           imagePrompt: char.visualRepresentation?.imagePrompt || '',
         },
         dialogueLines: char.dialogueLines || [],
-        attributes: char.attributes,
+        attributes: hasIncomingAttributes && Array.isArray(incomingAttributes) && incomingAttributes.length > 0 ? incomingAttributes : undefined,
       };
       
       // Get image URL from incoming character (supports both full and minimal format)
@@ -1257,11 +1394,11 @@ export default class SessionServer implements Party.Server {
       return;
     }
 
-    // Verify minimum participants (at least 2)
-    if (sessionState.participants.size < 2) {
+    // Allow start with director only (solo read-through) or with actors
+    if (sessionState.participants.size < 1) {
       sender.send(JSON.stringify({
         type: 'error',
-        message: 'At least 2 participants required to start performance',
+        message: 'At least 1 participant (director) required to start performance',
       }));
       return;
     }
@@ -1295,6 +1432,118 @@ export default class SessionServer implements Party.Server {
         timestamp: Date.now(),
       },
     }));
+  }
+
+  /**
+   * Handle performance end (director-only)
+   */
+  private async handlePerformanceEnd(
+    data: { sessionId: string },
+    sender: Party.Connection
+  ) {
+    const { sessionId } = data;
+
+    if (!(await this.requireDirector(sessionId, sender))) return;
+
+    const sessionState = await this.getSession(sessionId);
+    if (!sessionState) {
+      sender.send(JSON.stringify({
+        type: 'error',
+        message: 'Session not found',
+      }));
+      return;
+    }
+
+    // Only allow ending if currently performing
+    if (sessionState.status !== 'performing') {
+      sender.send(JSON.stringify({
+        type: 'error',
+        message: 'Performance is not in progress',
+      }));
+      return;
+    }
+
+    // Update to completed state
+    sessionState.status = 'completed';
+    sessionState.lastActivity = Date.now();
+
+    // Save session state
+    await this.room.storage.put(`session:${sessionId}`, {
+      ...sessionState,
+      participants: Array.from(sessionState.participants.entries()),
+    });
+
+    // Initialize wrap party data so clients can show voting UI immediately.
+    // State recovery and session:state:updated both provide it.
+    const now = Date.now();
+    const wrapPartyData: WrapPartyData = {
+      sessionId,
+      votes: [],
+      awards: [],
+      feedback: [],
+      sharedLinks: [],
+      createdAt: now,
+    };
+    await this.room.storage.put('wrap-party', wrapPartyData);
+
+    // Broadcast state change to all participants (include wrapPartyData so clients don't wait for recovery).
+    this.room.broadcast(JSON.stringify({
+      type: 'session:state:updated',
+      data: {
+        sessionId,
+        status: 'completed',
+        vibeContext: sessionState.vibeContext,
+        vibeLockedAt: sessionState.vibeLockedAt ?? null,
+        wrapPartyData,
+        timestamp: now,
+      },
+    }));
+
+    Logger.info('Performance ended by director', {
+      sessionId,
+      connectionId: sender.id,
+    });
+  }
+
+  /**
+   * Handle session end (director-only). Sets status to expired and broadcasts
+   * so all participants cleanup and redirect (e.g. to vibe-selection).
+   */
+  private async handleSessionEnd(
+    data: { sessionId: string },
+    sender: Party.Connection
+  ) {
+    const { sessionId } = data;
+
+    if (!(await this.requireDirector(sessionId, sender))) return;
+
+    const sessionState = await this.getSession(sessionId);
+    if (!sessionState) {
+      sender.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
+      return;
+    }
+
+    sessionState.status = 'expired';
+    sessionState.lastActivity = Date.now();
+    sessionState.expiresAt = Date.now();
+
+    await this.room.storage.put(`session:${sessionId}`, {
+      ...sessionState,
+      participants: Array.from(sessionState.participants.entries()),
+    });
+
+    this.room.broadcast(JSON.stringify({
+      type: 'session:state:updated',
+      data: {
+        sessionId,
+        status: 'expired',
+        vibeContext: sessionState.vibeContext,
+        vibeLockedAt: sessionState.vibeLockedAt ?? null,
+        timestamp: Date.now(),
+      },
+    }));
+
+    Logger.info('Session ended by director', { sessionId, connectionId: sender.id });
   }
 
   /**
@@ -1637,6 +1886,21 @@ export default class SessionServer implements Party.Server {
       },
     }));
 
+    // Log event for replay
+    await this.logEvent(
+      sessionId,
+      'character:assigned',
+      {
+        sessionId,
+        characterId,
+        participantId,
+        isLocked: false,
+        timestamp: Date.now(),
+      },
+      participantId,
+      characterId
+    );
+
     // Also broadcast full cast update to ensure all clients are in sync
     // Convert data URLs to HTTP URLs for broadcast
     const castWithHttpUrls = convertCastToHttpUrls(sessionId, cast);
@@ -1682,6 +1946,20 @@ export default class SessionServer implements Party.Server {
         requestedAt: Date.now(),
       },
     }));
+
+    // Log event for replay
+    await this.logEvent(
+      sessionId,
+      'assignment:requested',
+      {
+        sessionId,
+        participantId,
+        characterId,
+        requestedAt: Date.now(),
+      },
+      participantId,
+      characterId
+    );
   }
 
   /**
@@ -1744,6 +2022,20 @@ export default class SessionServer implements Party.Server {
       },
     }));
 
+    // Log event for replay
+    await this.logEvent(
+      sessionId,
+      'assignment:approved',
+      {
+        sessionId,
+        participantId,
+        characterId,
+        timestamp: Date.now(),
+      },
+      participantId,
+      characterId
+    );
+
     // Also broadcast full cast update to ensure all clients are in sync
     // Convert data URLs to HTTP URLs for broadcast
     const castWithHttpUrls = convertCastToHttpUrls(sessionId, cast);
@@ -1755,6 +2047,85 @@ export default class SessionServer implements Party.Server {
         timestamp: Date.now(),
       },
     }));
+  }
+
+  /**
+   * Handle assignment rejection (director rejects request or unassigns character)
+   */
+  private async handleAssignmentReject(
+    data: {
+      sessionId: string;
+      participantId: string;
+      characterId: string;
+    },
+    sender: Party.Connection
+  ) {
+    const { sessionId, participantId, characterId } = data;
+
+    if (!(await this.requireDirector(sessionId, sender))) return;
+
+    // Get cast from storage
+    const cast = await this.room.storage.get<Character[]>('cast') || [];
+    const character = cast.find((c) => c.id === characterId);
+
+    if (!character) {
+      return;
+    }
+
+    // Only reject if character is assigned to this participant
+    // This handles both rejecting a request (character might not be assigned yet)
+    // and unassigning an existing assignment
+    if (character.participantId === participantId) {
+      // Unassign character
+      character.participantId = null;
+      character.isLocked = false;
+    }
+
+    // Save cast
+    await this.room.storage.put('cast', cast);
+
+    // Broadcast rejection
+    this.room.broadcast(JSON.stringify({
+      type: 'assignment:rejected',
+      data: {
+        sessionId,
+        participantId,
+        characterId,
+        timestamp: Date.now(),
+      },
+    }));
+
+    // Log event for replay
+    await this.logEvent(
+      sessionId,
+      'assignment:rejected',
+      {
+        sessionId,
+        participantId,
+        characterId,
+        timestamp: Date.now(),
+      },
+      participantId,
+      characterId
+    );
+
+    // Also broadcast full cast update to ensure all clients are in sync
+    // Convert data URLs to HTTP URLs for broadcast
+    const castWithHttpUrls = convertCastToHttpUrls(sessionId, cast);
+    this.room.broadcast(JSON.stringify({
+      type: 'cast:updated',
+      data: {
+        sessionId,
+        cast: castWithHttpUrls,
+        timestamp: Date.now(),
+      },
+    }));
+
+    Logger.info('Assignment rejected', {
+      sessionId,
+      participantId,
+      characterId,
+    });
   }
 
   /**
@@ -1864,6 +2235,20 @@ export default class SessionServer implements Party.Server {
         timestamp: Date.now(),
       },
     }));
+
+    // Log event for replay
+    await this.logEvent(
+      sessionId,
+      'assignment:confirmed',
+      {
+        sessionId,
+        participantId,
+        characterId,
+        timestamp: Date.now(),
+      },
+      participantId,
+      characterId
+    );
 
     // Also broadcast full cast update to ensure all clients are in sync
     // This is critical so the director sees the locked assignment
@@ -2367,6 +2752,72 @@ export default class SessionServer implements Party.Server {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         });
+      }
+    }
+
+    // Event log endpoint - GET /events?since={timestamp}&type={eventType}
+    // Returns events since the specified timestamp for event replay on reconnection.
+    // Optional type parameter filters events by type.
+    if (routePath === '/events' && req.method === 'GET') {
+      const url = new URL(req.url);
+      const sinceParam = url.searchParams.get('since');
+      const typeParam = url.searchParams.get('type'); // Optional: filter by event type
+      const since = sinceParam ? parseInt(sinceParam, 10) : 0;
+
+      if (isNaN(since) || since < 0) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid since parameter. Must be a non-negative number.' }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      try {
+        const eventLogKey = `events:${sessionId}`;
+        const eventLog = await this.room.storage.get<EventLogEntry[]>(eventLogKey) || [];
+
+        // Filter events since the specified timestamp
+        let filteredEvents = eventLog.filter((event) => event.timestamp > since);
+
+        // Filter by type if specified
+        if (typeParam) {
+          filteredEvents = filteredEvents.filter((event) => event.type === typeParam);
+        }
+
+        // Sort by timestamp to ensure correct order
+        filteredEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+        Logger.info('Event log queried', {
+          sessionId,
+          since,
+          totalEvents: eventLog.length,
+          filteredEvents: filteredEvents.length,
+        });
+
+        return new Response(JSON.stringify({ events: filteredEvents }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      } catch (error) {
+        Logger.error('Failed to query event log', error as Error, {
+          sessionId,
+          since,
+        });
+        return new Response(
+          JSON.stringify({
+            error: 'Failed to query event log',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }),
+          {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
     }
 

@@ -57,6 +57,12 @@ export function DirectorConfigForm() {
   const setParticipant = useSetAtom(participantAtom);
   const participant = useAtomValue(participantAtom);
 
+  // Guarantee a valid 1–10 number for controlled inputs (atom can be undefined during hydration)
+  const chaosValue = Math.min(
+    10,
+    Math.max(1, typeof chaosLevel === "number" && !Number.isNaN(chaosLevel) ? chaosLevel : 5),
+  );
+
   // Ref to track latest cast value for async operations
   // This allows us to read the latest cast atom value in async functions
   const castRef = useRef<Character[]>(cast);
@@ -334,7 +340,7 @@ export function DirectorConfigForm() {
         theme,
         tone,
         participantCount,
-        chaosLevel,
+        chaosLevel: chaosValue,
       };
 
       const validated = SessionConfigurationSchema.safeParse(formData);
@@ -583,7 +589,7 @@ export function DirectorConfigForm() {
                 tone,
                 characters,
                 sceneCount: Math.ceil(participantCount / 2),
-                chaosLevel,
+                chaosLevel: chaosValue,
                 plot: plot.trim() || undefined,
                 jokes: jokesArray.length > 0 ? jokesArray : undefined,
               }),
@@ -1329,7 +1335,7 @@ export function DirectorConfigForm() {
         >
           {getSectionTitle("chaosLevelLabel")}:{" "}
           <span style={{ color: "var(--color-accent)", fontWeight: "600" }}>
-            {chaosLevel}
+            {chaosValue}
           </span>
         </label>
         <input
@@ -1337,7 +1343,7 @@ export function DirectorConfigForm() {
           id="chaosLevel"
           min={1}
           max={10}
-          value={chaosLevel}
+          value={chaosValue}
           onChange={(e) => setChaosLevel(Number(e.target.value))}
           className="w-full"
         />

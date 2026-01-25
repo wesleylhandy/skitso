@@ -42,12 +42,12 @@ export function TimingIndicator({
   // Use useMemo to derive the start time from progress state
   const lineStartTime = useMemo(() => {
     // If we have advancementControl and a lastAdvancedAt timestamp, use it
-    if (progress.advancementControl?.lastAdvancedAt) {
+    if (progress?.advancementControl?.lastAdvancedAt) {
       return progress.advancementControl.lastAdvancedAt;
     }
     // Otherwise, return 0 - the elapsed time calculation will handle this
     return 0;
-  }, [progress.advancementControl?.lastAdvancedAt]);
+  }, [progress?.advancementControl?.lastAdvancedAt]);
 
   // Update elapsed time every 100ms
   useEffect(() => {
