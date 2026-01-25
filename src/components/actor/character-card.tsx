@@ -1,21 +1,26 @@
 /**
  * Character Card Component
- * 
- * Displays character information including name, archetype, traits, and visual representation.
- * Does not display hidden motivation (only visible in Character Dossier).
+ *
+ * Displays character information including name, archetype, traits, attributes (ratings),
+ * and visual representation. Hidden motivation is only visible in Character Dossier.
  */
+
+'use client';
 
 import Image from 'next/image';
 import type { Character } from '@/src/state/types/session';
 import { ImageDownloadButton } from '@/src/components/ui/image-download-button';
 import { CharacterImagePlaceholder } from '@/src/components/ui/character-image-placeholder';
 import { normalizeImageUrl, isCloudinaryUrl } from '@/src/lib/partykit/client';
+import { useVibe } from '@/src/lib/hooks/use-vibe';
 
 interface CharacterCardProps {
   character: Character;
+  isLockedToCurrentUser?: boolean; // True if this character is locked to the current user
 }
 
-export function CharacterCard({ character }: CharacterCardProps) {
+export function CharacterCard({ character, isLockedToCurrentUser = false }: CharacterCardProps) {
+  const { visualTokens } = useVibe();
   const hasImage = character.visualRepresentation?.imageUrl && character.visualRepresentation.imageUrl.length > 0;
   const imageFilename = `${character.name.replace(/\s+/g, '-').toLowerCase()}-character.png`;
   
@@ -42,7 +47,27 @@ export function CharacterCard({ character }: CharacterCardProps) {
   }
 
   return (
-    <div className="character-card p-4 border rounded-lg">
+    <div 
+      className="character-card p-4 border rounded-lg"
+      style={{
+        ...(isLockedToCurrentUser && {
+          borderWidth: '3px',
+          borderColor: 'var(--color-primary)',
+          backgroundColor: 'var(--color-primary-alpha, rgba(var(--color-primary-rgb, 0, 0, 0), 0.1))',
+        }),
+      }}
+    >
+      {isLockedToCurrentUser && (
+        <div 
+          className="mb-2 px-3 py-1 rounded text-sm font-semibold"
+          style={{
+            backgroundColor: 'var(--color-primary)',
+            color: 'var(--color-bg)',
+          }}
+        >
+          ✓ Your Character
+        </div>
+      )}
       <div className="character-image mb-4 relative w-full aspect-square rounded-md overflow-hidden group">
         {hasImage ? (
           <>
@@ -88,17 +113,33 @@ export function CharacterCard({ character }: CharacterCardProps) {
         )}
       </div>
 
-      <h3 className="text-xl font-bold mb-2">{character.name}</h3>
+      <h3 className="text-xl font-bold mb-3" style={{ color: visualTokens.textColor }}>
+        {character.name}
+      </h3>
       
-      <p className="text-sm text-muted-foreground mb-2">
+      <p 
+        className="text-sm mb-4 font-medium" 
+        style={{ color: visualTokens.textColor, opacity: 0.9 }}
+      >
         {character.archetypeLabel}
       </p>
 
-      <div className="personality-traits mb-2">
-        <p className="text-sm font-medium mb-1">Personality Traits:</p>
-        <ul className="list-disc list-inside text-sm">
+      <div className="personality-traits">
+        <p 
+          className="text-sm font-semibold mb-2" 
+          style={{ color: visualTokens.textColor }}
+        >
+          Personality Traits
+        </p>
+        <ul className="list-disc list-outside text-sm space-y-1.5 pl-6 pr-2">
           {(character.personalityTraits ?? []).map((trait, index) => (
-            <li key={index}>{trait}</li>
+            <li 
+              key={index} 
+              className="leading-relaxed"
+              style={{ color: visualTokens.textColor }}
+            >
+              {trait}
+            </li>
           ))}
         </ul>
       </div>

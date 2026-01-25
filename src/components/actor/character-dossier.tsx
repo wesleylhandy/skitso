@@ -61,19 +61,6 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
 
   return (
     <div className="character-dossier p-6" data-theme={vibe}>
-      <div className="mb-6">
-        <button
-          onClick={onBack}
-          className="mb-4 text-sm underline cursor-pointer transition-opacity hover:opacity-75"
-          style={{ color: visualTokens.primaryColor }}
-        >
-          ← {getButtonLabel('back')}
-        </button>
-        <h1 className="text-3xl font-bold mb-2" style={{ color: visualTokens.textColor }}>
-          {getSectionTitle('characterDossier')}
-        </h1>
-      </div>
-
       <div className="character-details grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Visual Representation */}
         <div className="character-image relative w-full aspect-square rounded-lg overflow-hidden group" style={{
@@ -117,17 +104,17 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
         </div>
 
         {/* Character Information */}
-        <div className="character-info space-y-4">
-          <div>
+        <div className="character-info space-y-6">
+          <div className="pb-2 border-b" style={{ borderColor: `${visualTokens.textColor}20` }}>
             <h2 className="text-2xl font-bold mb-2" style={{ color: visualTokens.primaryColor }}>
               {character.name}
             </h2>
             <p 
-              className="text-lg" 
+              className="text-lg font-medium" 
               style={{ 
                 color: visualTokens.textColor, 
                 opacity: 0.9,
-                lineHeight: '1.5',
+                lineHeight: '1.6',
               }}
             >
               {character.archetypeLabel}
@@ -137,20 +124,20 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
           {/* Personality Traits */}
           <div>
             <h3 
-              className="text-lg font-semibold mb-2" 
+              className="text-lg font-semibold mb-3" 
               style={{ color: visualTokens.textColor, opacity: 1 }}
             >
               {getSectionTitle('personalityTraits')}
             </h3>
-            <ul className="list-disc list-inside space-y-1">
+            <ul className="list-disc list-outside text-sm space-y-2 pl-6 pr-2">
               {character.personalityTraits.map((trait, index) => (
                 <li 
                   key={index} 
-                  className="text-sm" 
+                  className="leading-relaxed" 
                   style={{ 
                     color: visualTokens.textColor, 
                     opacity: 1,
-                    lineHeight: '1.5',
+                    lineHeight: '1.6',
                   }}
                 >
                   {trait}
@@ -161,27 +148,27 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
 
           {/* Attributes (if available) */}
           {character.attributes && character.attributes.length > 0 && (
-            <div>
+            <div className="pt-2">
               <h3 
-                className="text-lg font-semibold mb-2" 
+                className="text-lg font-semibold mb-3" 
                 style={{ color: visualTokens.textColor, opacity: 1 }}
               >
                 {getSectionTitle('attributes')}
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-2.5 pl-2">
                 {character.attributes.map((attr, index) => (
-                  <div key={index} className="flex justify-between">
+                  <div key={index} className="flex justify-between items-center py-1">
                     <span 
                       className="text-sm" 
-                      style={{ color: visualTokens.textColor, opacity: 1 }}
+                      style={{ color: visualTokens.textColor, opacity: 0.9 }}
                     >
                       {attr.name}:
                     </span>
                     <span 
-                      className="text-sm font-medium" 
+                      className="text-sm font-semibold" 
                       style={{ color: visualTokens.textColor, opacity: 1 }}
                     >
-                      {attr.rating}/10
+                      {attr.rating}/100
                     </span>
                   </div>
                 ))}
@@ -192,7 +179,7 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
           {/* Hidden Motivation - Visible to assigned Actor and Director */}
           {canSeeHiddenMotivation && (
             <div
-              className="hidden-motivation p-4 rounded-lg"
+              className="hidden-motivation p-5 rounded-lg mt-2"
               style={{
                 backgroundColor: visualTokens.bgColor === '#0A0A0A' || visualTokens.bgColor === '#000000' || visualTokens.bgColor === '#141414' 
                   ? 'rgba(255, 255, 255, 0.08)' 
@@ -201,7 +188,7 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
               }}
             >
               <h3 
-                className="text-lg font-semibold mb-2" 
+                className="text-lg font-semibold mb-3" 
                 style={{ 
                   color: visualTokens.accentColor || visualTokens.primaryColor,
                   opacity: 1,
@@ -210,7 +197,7 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
                 {getSectionTitle('hiddenMotivation')}
                 {isDirector && !isAssignedActor && (
                   <span 
-                    className="ml-2 text-xs" 
+                    className="ml-2 text-xs font-normal" 
                     style={{ opacity: 0.8 }}
                   >
                     (Director View)
@@ -218,11 +205,11 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
                 )}
               </h3>
               <p 
-                className="text-sm" 
+                className="text-sm leading-relaxed" 
                 style={{ 
                   color: visualTokens.textColor,
                   opacity: 1,
-                  lineHeight: '1.6',
+                  lineHeight: '1.7',
                 }}
               >
                 {character.hiddenMotivation}
@@ -232,29 +219,16 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
 
           {/* Dialogue Lines Count */}
           <div 
-            className="text-sm" 
+            className="text-sm pt-2 mt-2 border-t" 
             style={{ 
               color: visualTokens.textColor, 
               opacity: 0.85,
+              borderColor: `${visualTokens.textColor}20`,
             }}
           >
             {dialogueLinesCount} dialogue line{dialogueLinesCount !== 1 ? 's' : ''}
           </div>
         </div>
-      </div>
-
-      {/* Back Button */}
-      <div className="mt-6">
-        <button
-          onClick={onBack}
-          className="px-6 py-3 rounded-lg font-semibold cursor-pointer transition-opacity hover:opacity-90"
-          style={{
-            backgroundColor: visualTokens.primaryColor,
-            color: visualTokens.bgColor,
-          }}
-        >
-          {getButtonLabel('back')}
-        </button>
       </div>
     </div>
   );

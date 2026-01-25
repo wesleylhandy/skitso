@@ -37,6 +37,7 @@ import { ConnectionStatusBadge } from '@/src/components/ui/connection-status-bad
 import { SessionExpirationWarning } from '@/src/components/ui/session-expiration-warning';
 import { VibeHeading } from '@/src/components/ui/vibe-heading';
 import { VibePanel } from '@/src/components/ui/vibe-panel';
+import { GenerationStickyHeader } from '@/src/components/director/generation-sticky-header';
 import type { Character, Script } from '@/src/state/types/session';
 import type { VibeType } from '@/src/state/types/vibe';
 
@@ -324,6 +325,13 @@ export default function DirectorDeskPage() {
     // Omit vibe (and cast/script) to avoid loop: setVibe from messages → re-run → requestStateRecovery → setVibe again.
   }, [sessionCode, setScript, setCast, setSessionState, setVibe, participant]);
 
+  // Clear generation progress when session code is cleared (e.g., on reset)
+  useEffect(() => {
+    if (!sessionCode) {
+      setGenerationProgress(null);
+    }
+  }, [sessionCode, setGenerationProgress]);
+
   // Auto-fix: If state says casting/performing but we don't have a valid session,
   // reset state to idle to prevent flashing and show form
   // BUT: Don't reset during generation or immediately after connection (allow time for state recovery)
@@ -399,39 +407,41 @@ export default function DirectorDeskPage() {
     });
   }
 
+  // Determine if generation is in progress
+  const isGenerating = sessionState === 'configuring' || generationProgress !== null;
+
   return (
-    <main className="min-h-screen p-8 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg)' }}>
-      <div className="max-w-4xl mx-auto">
-        <div
-          style={{
-            marginBottom: '2rem',
-          }}
-        >
-          <BackButton to="/vibe-selection" />
-        </div>
+    <>
+      {/* Sticky Header - Shows during generation or when session exists */}
+      <GenerationStickyHeader
+        generationProgress={generationProgress}
+        isGenerating={isGenerating}
+      />
+      <main className="min-h-screen p-8 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg)' }}>
+        <div className="max-w-4xl mx-auto">
+          <div
+            style={{
+              marginBottom: '2rem',
+            }}
+          >
+            <BackButton to="/vibe-selection" />
+          </div>
         <VibePanel className="mb-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <VibeHeading level={1} sectionKey="configuration" className="text-4xl font-bold" />
             <div className="flex flex-wrap items-center gap-4">
-              {generationProgress && (
-                <span
-                  className="text-sm opacity-90"
-                  role="status"
-                  aria-live="polite"
-                >
-                  Right now: {generationProgress.message}
-                </span>
-              )}
               <ConnectionStatusBadge />
               <ResetSessionButton variant="secondary" />
             </div>
           </div>
         </VibePanel>
         
-        {/* Session Code - Always visible when session exists */}
-        <div className="mb-8">
-          <SessionShare />
-        </div>
+        {/* Session Code - Show in main content when NOT generating (sticky header shows it during generation) */}
+        {!isGenerating && sessionCode && (
+          <div className="mb-8">
+            <SessionShare />
+          </div>
+        )}
         
         {/* Session Expiration Warning */}
         {sessionExpiresAt && (
@@ -456,5 +466,6 @@ export default function DirectorDeskPage() {
         </div>
       </div>
     </main>
+    </>
   );
 }

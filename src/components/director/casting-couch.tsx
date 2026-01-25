@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useVibe } from '@/src/lib/hooks/use-vibe';
 import { sessionCodeAtom } from '@/src/state/atoms/session-atom';
@@ -21,6 +21,7 @@ import { ConnectionStatus } from '@/src/components/ui/connection-status';
 import { CharacterCard } from '@/src/components/actor/character-card';
 import { ScriptPreviewModal } from './script-preview-modal';
 import { CharacterDossierModal } from './character-dossier-modal';
+import { ScriptExportButton } from '@/src/components/ui/script-export-button';
 import { CharacterAssignmentModal } from './character-assignment-modal';
 import { ConfirmationModal } from '@/src/components/ui/confirmation-modal';
 import {
@@ -40,6 +41,13 @@ import {
   onCastUpdate,
   startPerformance,
   leaveSession,
+  rejectAssignment,
+  fetchEvents,
+  replayEvents,
+  getLastEventTimestamp,
+  setLastEventTimestamp,
+  onConnectionStatus,
+  type EventLogEntry,
 } from '@/src/lib/partykit/client';
 import type { Participant, Character, ConnectionStatus as ConnectionStatusType, AssignmentRequest } from '@/src/state/types/session';
 import type { VibeType } from '@/src/state/types/vibe';
@@ -81,6 +89,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusType>('disconnected');
   const [participants, setParticipants] = useState<PartyKitParticipant[]>([]);
+  const participantsRef = useRef<PartyKitParticipant[]>([]);
   const [partyKitInitialized, setPartyKitInitialized] = useState(false);
   const [isScriptPreviewOpen, setIsScriptPreviewOpen] = useState(false);
   const [selectedCharacterForDossier, setSelectedCharacterForDossier] = useState<Character | null>(null);
@@ -111,8 +120,22 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       // Update connection status
       const updateConnectionStatus = () => {
         const status = getConnectionStatus();
-        setConnectionStatus(status === 'connected' ? 'connected' : 'disconnected');
+        // Handle all connection states properly
+        if (status === 'connected') {
+          setConnectionStatus('connected');
+        } else if (status === 'reconnecting') {
+          setConnectionStatus('reconnecting');
+        } else {
+          setConnectionStatus('disconnected');
+        }
       };
+
+      // Listen for connection status changes from PartyKit client
+      const unsubscribeConnectionStatus = onConnectionStatus((status) => {
+        if (mounted) {
+          setConnectionStatus(status);
+        }
+      });
 
       // Listen for connection events via PartyKit message handlers
       const handleConnect = () => {
@@ -130,7 +153,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       });
 
       // Listen for session joined event
-      const unsubscribeSessionJoined = onSessionJoined((data) => {
+      const unsubscribeSessionJoined = onSessionJoined(async (data) => {
         if (data.sessionId === sessionCode && mounted) {
           // Map participants to ensure they have names
           const participantsWithNames = data.participants.map((p) => ({
@@ -138,9 +161,78 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
             name: p.name || `Participant ${p.participantId.slice(-6)}`,
           }));
           setParticipants(participantsWithNames);
+          participantsRef.current = participantsWithNames;
           // Sync VibeContext from server (omit vibe from effect deps to avoid setVibe→re-run→join loop)
           if (data.vibeContext != null) {
             setVibe(data.vibeContext);
+          }
+
+          // After session joined, replay missed events if reconnecting
+          const lastTimestamp = getLastEventTimestamp(sessionCode);
+          if (lastTimestamp > 0) {
+            try {
+              const events = await fetchEvents(sessionCode, lastTimestamp);
+              if (events.length > 0 && mounted) {
+                console.log('[CastingCouch] Replaying missed events:', events.length);
+                
+                // Replay events with idempotency checks
+                const currentState = {
+                  participants: participantsWithNames,
+                  cast,
+                  assignmentRequests,
+                };
+
+                await replayEvents(events, currentState, (event: EventLogEntry) => {
+                  // Handle each event type
+                  if (event.type === 'participant:joined' && event.data) {
+                    const eventData = event.data as { participants?: unknown[] };
+                    if (eventData.participants) {
+                      const participantsWithNames: PartyKitParticipant[] = eventData.participants.map((p: unknown) => {
+                        const participant = p as {
+                          participantId: string;
+                          connectionId: string;
+                          role: 'director' | 'actor';
+                          connectionStatus: ConnectionStatusType;
+                          joinedAt: number;
+                          lastSeen: number;
+                          name?: string;
+                        };
+                        return {
+                          participantId: participant.participantId,
+                          connectionId: participant.connectionId,
+                          role: participant.role,
+                          connectionStatus: participant.connectionStatus,
+                          joinedAt: participant.joinedAt,
+                          lastSeen: participant.lastSeen,
+                          name: participant.name || `Participant ${participant.participantId.slice(-6)}`,
+                        };
+                      });
+                      setParticipants(participantsWithNames);
+                    }
+                  } else if (event.type === 'assignment:requested' && event.data) {
+                    const eventData = event.data as { participantId: string; characterId: string };
+                    setAssignmentRequests((prev) => {
+                      const next = new Map(prev);
+                      next.set(eventData.participantId, {
+                        participantId: eventData.participantId,
+                        characterId: eventData.characterId,
+                        requestedAt: event.timestamp,
+                      });
+                      return next;
+                    });
+                  } else if (event.type === 'cast:updated' && event.data) {
+                    const eventData = event.data as { cast?: Character[] };
+                    if (eventData.cast) {
+                      setCast(eventData.cast);
+                    }
+                  }
+                  // Update last timestamp
+                  setLastEventTimestamp(sessionCode, event.timestamp);
+                });
+              }
+            } catch (error) {
+              console.error('[CastingCouch] Failed to replay events:', error);
+            }
           }
         }
       });
@@ -170,6 +262,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
             name: p.name || `Participant ${p.participantId.slice(-6)}`,
           }));
           setParticipants(participantsWithNames);
+          participantsRef.current = participantsWithNames;
         }
       });
 
@@ -259,7 +352,30 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
             castLength: data.cast.length,
             charactersWithImages: data.cast.filter((c) => c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0).length,
           });
-          setCast(data.cast);
+          
+          // CRITICAL: Clean up stale participantId assignments
+          // Only keep participantId if the participant actually exists in the current session
+          // This prevents showing assignments for participants who have left
+          // Use ref to get latest participants (closure may have stale value)
+          const currentParticipantIds = new Set(participantsRef.current.map((p) => p.participantId));
+          const cleanedCast = data.cast.map((char) => {
+            // If character has a participantId but that participant doesn't exist, clear it
+            if (char.participantId && !currentParticipantIds.has(char.participantId)) {
+              console.log('[CastingCouch] Clearing stale assignment:', {
+                characterId: char.id,
+                characterName: char.name,
+                staleParticipantId: char.participantId,
+              });
+              return {
+                ...char,
+                participantId: null,
+                isLocked: false, // Also clear lock status for stale assignments
+              };
+            }
+            return char;
+          });
+          
+          setCast(cleanedCast);
         } else {
           console.log('[CastingCouch] Ignoring cast:updated event - session mismatch or unmounted', {
             eventSessionId: data.sessionId,
@@ -280,6 +396,8 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
               next.set(request.participantId, request);
               return next;
             });
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
           } else if (message.type === 'assignment:approved' && mounted) {
             const { participantId } = message.data;
             setAssignmentRequests((prev) => {
@@ -287,6 +405,8 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
               next.delete(participantId);
               return next;
             });
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
           } else if (message.type === 'assignment:confirmed' && mounted) {
             const { participantId, characterId } = message.data;
             // Remove assignment request
@@ -305,6 +425,14 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                 return char;
               });
             });
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
+          } else if (message.type === 'participant:joined' && mounted) {
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
+          } else if (message.type === 'cast:updated' && mounted) {
+            // Update last event timestamp
+            setLastEventTimestamp(sessionCode, Date.now());
           }
         } catch (error) {
           // Ignore parse errors
@@ -334,6 +462,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         unsubscribeCharacterOverride();
         unsubscribeCharacterAssigned();
         unsubscribeCastUpdate();
+        unsubscribeConnectionStatus();
         const client = getPartyKitClient();
         if (client) {
           client.removeEventListener('message', handleMessage);
@@ -352,9 +481,79 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
     }
   }, [sessionCode, participant, setVibe, setCast]);
 
+  // Clean up stale character assignments when participants change
+  // This handles cases where localStorage has stale participantId values
+  // from previous sessions or participants who have left
+  useEffect(() => {
+    if (participants.length === 0 || cast.length === 0) {
+      return;
+    }
+
+    const currentParticipantIds = new Set(participants.map((p) => p.participantId));
+    const hasStaleAssignments = cast.some(
+      (char) => char.participantId && !currentParticipantIds.has(char.participantId)
+    );
+
+    if (hasStaleAssignments) {
+      console.log('[CastingCouch] Cleaning up stale character assignments:', {
+        participantIds: Array.from(currentParticipantIds),
+        staleAssignments: cast
+          .filter((char) => char.participantId && !currentParticipantIds.has(char.participantId))
+          .map((char) => ({ characterId: char.id, characterName: char.name, staleParticipantId: char.participantId })),
+      });
+
+      setCast((currentCast) =>
+        currentCast.map((char) => {
+          // If character has a participantId but that participant doesn't exist, clear it
+          if (char.participantId && !currentParticipantIds.has(char.participantId)) {
+            return {
+              ...char,
+              participantId: null,
+              isLocked: false, // Also clear lock status for stale assignments
+            };
+          }
+          return char;
+        })
+      );
+    }
+  }, [participants, cast, setCast]);
+
   // Get character assignment for a participant
+  // Only return assignments that are either:
+  // 1. Locked (confirmed by actor)
+  // 2. Pending (director assigned or approved, waiting for actor confirmation)
+  // We do NOT show characters with participantId that weren't explicitly assigned
+  // (to avoid showing stale data or auto-assignments that weren't requested)
   const getCharacterForParticipant = (participantId: string): Character | null => {
-    return cast.find((char) => char.participantId === participantId) || null;
+    // CRITICAL: Only show assignments if the participant actually exists in the current session
+    // This prevents showing stale assignments from localStorage when participants have left
+    const participantExists = participants.some((p) => p.participantId === participantId);
+    if (!participantExists) {
+      // Participant doesn't exist - this is stale data, don't show assignment
+      return null;
+    }
+
+    const character = cast.find((char) => char.participantId === participantId);
+    
+    // Only show if:
+    // - Character is locked (confirmed assignment)
+    // - OR character has participantId but isn't locked (pending assignment from director)
+    //   AND there's either an assignment request OR the character was explicitly assigned
+    if (character) {
+      if (character.isLocked) {
+        // Locked assignment - always show
+        return character;
+      }
+      
+      // Pending assignment - only show if there's an explicit assignment event
+      // Check if there's an assignment request or if this was assigned via director action
+      // (We can't easily track "director assigned without request" vs stale data,
+      // so we show pending assignments if participantId is set but not locked)
+      // The director can see this and reassign if needed
+      return character;
+    }
+    
+    return null;
   };
 
   // Handle character override (Director only)
@@ -436,6 +635,15 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
     }));
   };
 
+  // Handle reject assignment request
+  const handleRejectRequest = (participantId: string, characterId: string) => {
+    if (!isDirector || !sessionCode) {
+      return;
+    }
+
+    rejectAssignment(sessionCode, participantId, characterId);
+  };
+
   // Handle suggest different character
   const handleSuggestCharacter = (participantId: string, suggestedCharacterId: string) => {
     if (!isDirector || !sessionCode) {
@@ -472,9 +680,9 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
       return;
     }
 
-    // Verify minimum participants
-    if (participants.length < 2) {
-      console.warn('At least 2 participants required to start performance');
+    // Require at least director (solo read-through allowed)
+    if (participants.length < 1) {
+      console.warn('At least 1 participant (director) required to start performance');
       return;
     }
 
@@ -529,7 +737,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                 {character ? (
                   <div className="mt-2">
                     <CharacterCard character={character} />
-                    <div className="mt-2 flex gap-2 flex-wrap">
+                    <div className="mt-2 flex gap-2 flex-wrap items-center">
                       {isDirector && (
                         <>
                           <button
@@ -543,17 +751,22 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                             View Dossier
                           </button>
                           {!character.isLocked && (
-                            <button
-                              onClick={() => handleReassignCharacter(p.participantId, character.id)}
-                              className="text-sm transition-opacity hover:opacity-75"
-                              style={{ 
-                                color: visualTokens.accentColor || visualTokens.primaryColor,
-                                cursor: 'pointer',
-                                pointerEvents: 'auto',
-                              }}
-                            >
-                              Reassign
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleReassignCharacter(p.participantId, character.id)}
+                                className="text-sm transition-opacity hover:opacity-75"
+                                style={{ 
+                                  color: visualTokens.accentColor || visualTokens.primaryColor,
+                                  cursor: 'pointer',
+                                  pointerEvents: 'auto',
+                                }}
+                              >
+                                Reassign
+                              </button>
+                              <span className="text-xs" style={{ color: visualTokens.textColor, opacity: 0.7 }}>
+                                (Pending confirmation)
+                              </span>
+                            </>
                           )}
                           {character.isLocked && (
                             <span className="text-xs" style={{ color: visualTokens.textColor, opacity: 0.7 }}>
@@ -608,6 +821,28 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                         Approve
                       </button>
                       <button
+                        onClick={() => {
+                          const request = assignmentRequests.get(p.participantId);
+                          if (request) {
+                            handleRejectRequest(p.participantId, request.characterId);
+                          }
+                        }}
+                        className="text-xs px-2 py-1 rounded transition-opacity hover:opacity-75"
+                        style={{
+                          backgroundColor: 'transparent',
+                          color: visualTokens.textColor,
+                          borderColor: visualTokens.primaryColor,
+                          borderWidth: '1px',
+                          borderStyle: 'solid',
+                          cursor: 'pointer',
+                          pointerEvents: 'auto',
+                          minHeight: '44px',
+                          minWidth: '44px',
+                        }}
+                      >
+                        Reject
+                      </button>
+                      <button
                         onClick={() => handleAssignCharacter(undefined, p.participantId)}
                         className="text-xs px-2 py-1 rounded transition-opacity hover:opacity-75"
                         style={{
@@ -633,10 +868,18 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         isOpen={showStartConfirmation}
         onClose={() => setShowStartConfirmation(false)}
         onConfirm={confirmStartPerformance}
-        title="Start Performance"
-        message="Are you sure you want to start the performance? All participants will be notified and the teleprompter will begin."
-        confirmLabel="Start Performance"
-        cancelLabel="Cancel"
+        title={
+          participants.length === 1
+            ? getSectionTitle('readThroughConfirmTitle')
+            : getButtonLabel('startPerformance')
+        }
+        message={
+          participants.length === 1
+            ? getSectionTitle('readThroughConfirmMessage')
+            : 'Are you sure you want to start the performance? All participants will be notified and the teleprompter will begin.'
+        }
+        confirmLabel={getButtonLabel('startPerformance')}
+        cancelLabel={getButtonLabel('cancel')}
       />
     </div>
   );
@@ -677,8 +920,31 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                     </button>
                   )}
                   {character.isLocked && (
-                    <span className="text-xs" style={{ color: visualTokens.textColor, opacity: 0.7 }}>
+                    <span 
+                      className="text-xs px-2 py-1 rounded"
+                      style={{ 
+                        color: visualTokens.bgColor,
+                        backgroundColor: visualTokens.primaryColor,
+                        opacity: 1,
+                        fontWeight: 'semibold',
+                      }}
+                    >
                       Locked
+                    </span>
+                  )}
+                  {character.participantId && !character.isLocked && (
+                    <span 
+                      className="text-xs px-2 py-1 rounded"
+                      style={{ 
+                        color: visualTokens.textColor,
+                        backgroundColor: 'transparent',
+                        borderColor: visualTokens.primaryColor,
+                        borderWidth: '1px',
+                        borderStyle: 'solid',
+                        opacity: 0.8,
+                      }}
+                    >
+                      Pending
                     </span>
                   )}
                 </div>
@@ -694,33 +960,36 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
           <div className="flex gap-4 flex-wrap">
             {/* Preview Script Button */}
             {script && (
-              <button
-                onClick={() => setIsScriptPreviewOpen(true)}
-                className="px-6 py-3 rounded-lg font-semibold transition-opacity hover:opacity-75"
-                style={{
-                  backgroundColor: visualTokens.accentColor || visualTokens.primaryColor,
-                  color: visualTokens.bgColor,
-                  opacity: 0.8,
-                  cursor: 'pointer',
-                  pointerEvents: 'auto',
-                  minHeight: '44px',
-                  minWidth: '44px',
-                }}
-              >
-                Preview Script
-              </button>
+              <>
+                <button
+                  onClick={() => setIsScriptPreviewOpen(true)}
+                  className="px-6 py-3 rounded-lg font-semibold transition-opacity hover:opacity-75"
+                  style={{
+                    backgroundColor: visualTokens.accentColor || visualTokens.primaryColor,
+                    color: visualTokens.bgColor,
+                    opacity: 0.8,
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                    minHeight: '44px',
+                    minWidth: '44px',
+                  }}
+                >
+                  Preview Script
+                </button>
+                <ScriptExportButton variant="secondary" />
+              </>
             )}
 
             {/* Start Performance Button */}
             <button
               onClick={handleStartPerformance}
-              disabled={!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2}
+              disabled={!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 1}
               className="px-6 py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-75"
               style={{
                 backgroundColor: visualTokens.primaryColor,
                 color: visualTokens.bgColor,
-                cursor: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2) ? 'not-allowed' : 'pointer',
-                pointerEvents: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2) ? 'none' : 'auto',
+                cursor: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 1) ? 'not-allowed' : 'pointer',
+                pointerEvents: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 1) ? 'none' : 'auto',
                 minHeight: '44px',
                 minWidth: '44px',
               }}
@@ -728,9 +997,9 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
               {getButtonLabel('startPerformance')}
             </button>
           </div>
-          {participants.length < 2 && (
+          {participants.length === 1 && (
             <p className="text-sm text-muted-foreground">
-              At least 2 participants required to start performance
+              {getSectionTitle('readThroughSubtext')}
             </p>
           )}
         </div>

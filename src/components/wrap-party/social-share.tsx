@@ -33,12 +33,33 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
   }
 
   const shareUrl = generateShareableLink(sessionCode);
-  const shareText = encodeURIComponent('Check out this amazing performance on Skitso!');
+  const shareText = 'Check out this amazing performance on Skitso!';
+  const encodedShareText = encodeURIComponent(shareText);
 
   const shareLinks = {
-    twitter: `https://twitter.com/intent/tweet?text=${shareText}&url=${encodeURIComponent(shareUrl)}`,
+    twitter: `https://twitter.com/intent/tweet?text=${encodedShareText}&url=${encodeURIComponent(shareUrl)}`,
     instagram: `https://www.instagram.com/`, // Instagram doesn't support direct link sharing
     tiktok: `https://www.tiktok.com/upload?lang=en`, // TikTok requires upload, not link sharing
+  };
+
+  // Check if Web Share API is available (mobile devices)
+  const canUseNativeShare = typeof navigator !== 'undefined' && 'share' in navigator;
+
+  const handleNativeShare = async () => {
+    if (!canUseNativeShare) return;
+
+    try {
+      await navigator.share({
+        title: 'Skitso Performance',
+        text: shareText,
+        url: shareUrl,
+      });
+    } catch (error) {
+      // User cancelled or share failed - ignore silently
+      if ((error as Error).name !== 'AbortError') {
+        console.error('Share failed:', error);
+      }
+    }
   };
 
   const handleShare = async (platform: 'twitter' | 'instagram' | 'tiktok') => {
@@ -91,6 +112,26 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
           gap: '1rem',
         }}
       >
+        {canUseNativeShare && (
+          <button
+            type="button"
+            onClick={handleNativeShare}
+            style={{
+              background: visualTokens.primaryColor,
+              color: visualTokens.bgColor,
+              border: 'none',
+              padding: '0.75rem 1.5rem',
+              borderRadius: visualTokens.borderRadius,
+              cursor: 'pointer',
+              fontFamily: visualTokens.bodyFont,
+              fontSize: '1rem',
+              minWidth: '44px',
+              minHeight: '44px',
+            }}
+          >
+            {getButtonLabel('share')}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => handleShare('twitter')}

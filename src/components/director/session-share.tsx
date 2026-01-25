@@ -23,6 +23,28 @@ export function SessionShare() {
 
   const shareableLink = generateShareableLink(sessionCode);
 
+  // Check if Web Share API is available (mobile devices)
+  const canUseNativeShare = typeof navigator !== 'undefined' && 'share' in navigator;
+
+  const handleNativeShare = async () => {
+    if (!canUseNativeShare) return;
+
+    try {
+      await navigator.share({
+        title: 'Join my Skitso session',
+        text: `Join my Skitso performance session: ${sessionCode}`,
+        url: shareableLink,
+      });
+    } catch (error) {
+      // User cancelled or share failed - ignore silently
+      if ((error as Error).name !== 'AbortError') {
+        console.error('Share failed:', error);
+        // Fall back to copy on error
+        await handleCopy();
+      }
+    }
+  };
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(shareableLink);
@@ -48,19 +70,35 @@ export function SessionShare() {
           className="flex-1 p-2 border rounded bg-[var(--color-bg)] text-[var(--color-text)]"
           style={{ borderColor: 'var(--color-border)' }}
         />
-        <button
-          onClick={handleCopy}
-          className="px-4 py-2 rounded font-medium transition-opacity hover:opacity-90"
-          style={{
-            backgroundColor: 'var(--color-primary)',
-            color: 'var(--color-bg)',
-            cursor: 'pointer',
-            minHeight: '44px',
-            minWidth: '44px',
-          }}
-        >
-          {copied ? 'Copied!' : getButtonLabel('share')}
-        </button>
+        {canUseNativeShare ? (
+          <button
+            onClick={handleNativeShare}
+            className="px-4 py-2 rounded font-medium transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-bg)',
+              cursor: 'pointer',
+              minHeight: '44px',
+              minWidth: '44px',
+            }}
+          >
+            {getButtonLabel('share')}
+          </button>
+        ) : (
+          <button
+            onClick={handleCopy}
+            className="px-4 py-2 rounded font-medium transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-bg)',
+              cursor: 'pointer',
+              minHeight: '44px',
+              minWidth: '44px',
+            }}
+          >
+            {copied ? 'Copied!' : getButtonLabel('share')}
+          </button>
+        )}
       </div>
     </div>
   );

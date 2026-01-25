@@ -93,14 +93,15 @@ export function VibeSelector() {
   };
 
   return (
-    <div
+      <div
         role="group"
         aria-label="Select a production vibe"
         aria-roledescription="Vibe selection grid"
         data-vibe-selector
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
           gap: '2rem',
           padding: '2rem',
           maxWidth: '1200px',

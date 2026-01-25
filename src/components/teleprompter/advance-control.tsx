@@ -37,7 +37,7 @@ export function AdvanceControl({
   const { getButtonLabel, visualTokens } = useVibe();
 
   const isDirector = participant?.role === 'director';
-  const hasOverride = progress.advancementControl.directorOverride && isDirector;
+  const hasOverride = progress?.advancementControl?.directorOverride && isDirector;
 
   return (
     <div className="flex items-center justify-center gap-4 p-4">
