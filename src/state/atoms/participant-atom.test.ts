@@ -50,6 +50,8 @@ describe('participantAtom', () => {
       role: 'actor',
       name: 'Test Actor',
       characterAssignment: null,
+      assignmentStatus: 'none',
+      requestedCharacterId: null,
       connectionStatus: 'connected',
       joinedAt: Date.now(),
       deviceInfo: {
@@ -76,6 +78,8 @@ describe('participantAtom', () => {
       role: 'director',
       name: 'Test Director',
       characterAssignment: null,
+      assignmentStatus: 'none',
+      requestedCharacterId: null,
       connectionStatus: 'connected',
       joinedAt: Date.now(),
       deviceInfo: {
@@ -99,6 +103,8 @@ describe('participantAtom', () => {
       role: 'actor',
       name: 'Initial Name',
       characterAssignment: null,
+      assignmentStatus: 'none',
+      requestedCharacterId: null,
       connectionStatus: 'connected',
       joinedAt: Date.now(),
       deviceInfo: {
@@ -133,6 +139,8 @@ describe('participantAtom', () => {
       role: 'actor',
       name: 'Test',
       characterAssignment: null,
+      assignmentStatus: 'none',
+      requestedCharacterId: null,
       connectionStatus: 'connected',
       joinedAt: Date.now(),
       deviceInfo: {

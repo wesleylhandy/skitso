@@ -34,6 +34,7 @@ describe('Script Prompt Generation - T071: VibeContext Style Matching', () => {
       id: 'char1',
       sessionId: 'session1',
       participantId: null,
+      isLocked: false,
       name: 'Character1',
       archetypeLabel: 'The Main Character',
       personalityTraits: ['confident', 'bold'],

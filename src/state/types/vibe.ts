@@ -19,6 +19,11 @@ export interface VisualTokens {
   primaryColor: string;
   accentColor: string;
   textColor: string; // WCAG-compliant text color for bgColor
+  // Semantic colors for status indicators (success, warning, error, info)
+  successColor?: string; // Defaults to primaryColor if not specified
+  warningColor?: string; // Defaults to accentColor if not specified
+  errorColor?: string; // Theme-aware error color (should maintain red semantic meaning)
+  infoColor?: string; // Defaults to accentColor if not specified
   headerFont: string;
   bodyFont: string;
   borderRadius: string;

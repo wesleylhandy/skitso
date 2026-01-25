@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { getDefaultStore } from 'jotai';
 import { DirectorConfigForm } from './director-config-form';
 import { vibeAtom } from '@/src/state/atoms/vibe-atom';
@@ -15,6 +15,15 @@ import type { VibeType } from '@/src/state/types/vibe';
 
 // Mock fetch for API calls
 global.fetch = vi.fn();
+
+// Mock PartyKit client (form calls updateCast, updateScript, updateSessionState, initializePartyKitClient, emitGenerationProgress)
+vi.mock('@/src/lib/partykit/client', () => ({
+  updateSessionState: vi.fn(),
+  initializePartyKitClient: vi.fn(() => ({ readyState: 1, send: vi.fn() })),
+  updateCast: vi.fn(),
+  updateScript: vi.fn(),
+  emitGenerationProgress: vi.fn(),
+}));
 
 describe('DirectorConfigForm - T071a: Theme-Specific Display', () => {
   const store = getDefaultStore();
@@ -215,11 +224,13 @@ describe('DirectorConfigForm - Optional Fields', () => {
     render(<DirectorConfigForm />);
 
     await waitFor(() => {
-      const plotTextarea = screen.getByPlaceholderText(/detailed plot description/i);
+      const plotTextarea = screen.getByPlaceholderText(
+        VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.plot,
+      );
       expect(plotTextarea).toBeInTheDocument();
     });
 
-    const plotLabel = screen.getByLabelText(/plot/i);
+    const plotLabel = screen.getByLabelText(/deep lore/i);
     expect(plotLabel).toBeInTheDocument();
   });
 
@@ -227,11 +238,13 @@ describe('DirectorConfigForm - Optional Fields', () => {
     render(<DirectorConfigForm />);
 
     await waitFor(() => {
-      const jokesLabel = screen.getByText(/jokes & phrases/i);
-      expect(jokesLabel).toBeInTheDocument();
+      const jokesControl = screen.getByLabelText(/custom lines/i);
+      expect(jokesControl).toBeInTheDocument();
     });
 
-    const jokesTextarea = screen.getByPlaceholderText(/specific jokes, phrases/i);
+    const jokesTextarea = screen.getByPlaceholderText(
+      VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.jokes,
+    );
     expect(jokesTextarea).toBeInTheDocument();
   });
 
@@ -277,41 +290,55 @@ describe('DirectorConfigForm - Optional Fields', () => {
   it('should include plot in script generation request when provided', async () => {
     render(<DirectorConfigForm />);
 
-    // Fill required fields
     const themeInput = screen.getByPlaceholderText(VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.theme);
-    fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
-
-    // Fill plot field
-    const plotInput = screen.getByPlaceholderText(/detailed plot description/i);
-    fireEvent.change(plotInput, { target: { value: 'A detailed plot description' } });
-
-    // Mock script generation
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        characters: [
-          {
-            name: 'Test Character',
-            archetypeLabel: 'The Test',
-            personalityTraits: ['Testy'],
-            hiddenMotivation: 'To test',
-            imagePrompt: 'A test character',
-            attributes: [{ name: 'Test', rating: 50 }],
-          },
-        ],
-      }),
-    }).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        title: 'Test Script',
-        length: '2 minutes',
-        description: 'A test script',
-        scenes: [],
-      }),
+    const plotInput = screen.getByPlaceholderText(
+      VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.plot,
+    );
+    await act(async () => {
+      fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
+      fireEvent.change(plotInput, { target: { value: 'A detailed plot description' } });
+    });
+    await waitFor(() => {
+      expect(themeInput).toHaveValue('A test theme for the skit');
     });
 
+    // Mock create session, then character + script generation
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          characters: [
+            {
+              name: 'Test Character',
+              archetypeLabel: 'The Test',
+              personalityTraits: ['Testy'],
+              hiddenMotivation: 'To test',
+              imagePrompt: 'A test character',
+              attributes: [{ name: 'Test', rating: 50 }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          title: 'Test Script',
+          length: '2 minutes',
+          description: 'A test script',
+          scenes: [],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ imageUrl: 'https://example.com/img.png' }),
+      });
+
     const submitButton = screen.getByRole('button', { name: /send it/i });
-    fireEvent.click(submitButton);
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -331,41 +358,55 @@ describe('DirectorConfigForm - Optional Fields', () => {
   it('should include jokes in script generation request when provided', async () => {
     render(<DirectorConfigForm />);
 
-    // Fill required fields
     const themeInput = screen.getByPlaceholderText(VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.theme);
-    fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
-
-    // Fill jokes field
-    const jokesInput = screen.getByPlaceholderText(/specific jokes, phrases/i);
-    fireEvent.change(jokesInput, { target: { value: 'First joke\nSecond joke' } });
-
-    // Mock API responses
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        characters: [
-          {
-            name: 'Test Character',
-            archetypeLabel: 'The Test',
-            personalityTraits: ['Testy'],
-            hiddenMotivation: 'To test',
-            imagePrompt: 'A test character',
-            attributes: [{ name: 'Test', rating: 50 }],
-          },
-        ],
-      }),
-    }).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        title: 'Test Script',
-        length: '2 minutes',
-        description: 'A test script',
-        scenes: [],
-      }),
+    const jokesInput = screen.getByPlaceholderText(
+      VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.jokes,
+    );
+    await act(async () => {
+      fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
+      fireEvent.change(jokesInput, { target: { value: 'First joke\nSecond joke' } });
+    });
+    await waitFor(() => {
+      expect(themeInput).toHaveValue('A test theme for the skit');
     });
 
+    // Mock create session, then character + script generation, then update session + character image
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          characters: [
+            {
+              name: 'Test Character',
+              archetypeLabel: 'The Test',
+              personalityTraits: ['Testy'],
+              hiddenMotivation: 'To test',
+              imagePrompt: 'A test character',
+              attributes: [{ name: 'Test', rating: 50 }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          title: 'Test Script',
+          length: '2 minutes',
+          description: 'A test script',
+          scenes: [],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ imageUrl: 'https://example.com/img.png' }),
+      });
+
     const submitButton = screen.getByRole('button', { name: /send it/i });
-    fireEvent.click(submitButton);
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -385,37 +426,51 @@ describe('DirectorConfigForm - Optional Fields', () => {
   it('should not include optional fields when empty', async () => {
     render(<DirectorConfigForm />);
 
-    // Fill only required fields
     const themeInput = screen.getByPlaceholderText(VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.theme);
-    fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
-
-    // Mock API responses
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        characters: [
-          {
-            name: 'Test Character',
-            archetypeLabel: 'The Test',
-            personalityTraits: ['Testy'],
-            hiddenMotivation: 'To test',
-            imagePrompt: 'A test character',
-            attributes: [{ name: 'Test', rating: 50 }],
-          },
-        ],
-      }),
-    }).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        title: 'Test Script',
-        length: '2 minutes',
-        description: 'A test script',
-        scenes: [],
-      }),
+    await act(async () => {
+      fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
+    });
+    await waitFor(() => {
+      expect(themeInput).toHaveValue('A test theme for the skit');
     });
 
+    // Mock create session, then character + script, then update session + character image
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          characters: [
+            {
+              name: 'Test Character',
+              archetypeLabel: 'The Test',
+              personalityTraits: ['Testy'],
+              hiddenMotivation: 'To test',
+              imagePrompt: 'A test character',
+              attributes: [{ name: 'Test', rating: 50 }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          title: 'Test Script',
+          length: '2 minutes',
+          description: 'A test script',
+          scenes: [],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ imageUrl: 'https://example.com/img.png' }),
+      });
+
     const submitButton = screen.getByRole('button', { name: /send it/i });
-    fireEvent.click(submitButton);
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
@@ -430,6 +485,154 @@ describe('DirectorConfigForm - Optional Fields', () => {
       const requestBody = JSON.parse(scriptCall[1]?.body || '{}');
       expect(requestBody.plot).toBeUndefined();
       expect(requestBody.jokes).toBeUndefined();
+    }
+  });
+
+  it('should include director-defined characters in character generation request when provided', async () => {
+    render(<DirectorConfigForm />);
+
+    // Fill required fields
+    const themeInput = screen.getByPlaceholderText(VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.theme);
+    fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
+
+    // Add a pre-defined character via the UI
+    const addButton = await screen.findByRole('button', { name: /add character/i });
+    fireEvent.click(addButton);
+
+    const nameInput = await screen.findByPlaceholderText(/character name/i);
+    fireEvent.change(nameInput, { target: { value: 'Director Predefined Character' } });
+
+    const roleInput = await screen.findByPlaceholderText(/role \/ archetype/i);
+    fireEvent.change(roleInput, { target: { value: 'Protagonist' } });
+
+    // Mock create session, then character + script, then update session + character image
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          characters: [
+            {
+              name: 'Generated Character',
+              archetypeLabel: 'The Generated',
+              personalityTraits: ['Curious'],
+              hiddenMotivation: 'To verify tests',
+              imagePrompt: 'A generated character',
+              attributes: [{ name: 'Charm', rating: 75 }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          title: 'Generated Script',
+          length: '2 minutes',
+          description: 'A generated script',
+          scenes: [],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ imageUrl: 'https://example.com/img.png' }),
+      });
+
+    const submitButton = screen.getByRole('button', { name: /send it/i });
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    // Verify director-defined characters were included in the character generation request
+    const charactersCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === '/api/openai/characters'
+    );
+
+    expect(charactersCall).toBeDefined();
+    if (charactersCall) {
+      const requestBody = JSON.parse((charactersCall[1] as RequestInit | undefined)?.body as string);
+      expect(requestBody.directorDefinedCharacters).toBeDefined();
+      expect(requestBody.directorDefinedCharacters).toHaveLength(1);
+      expect(requestBody.directorDefinedCharacters[0]).toEqual(
+        expect.objectContaining({
+          name: 'Director Predefined Character',
+          role: 'Protagonist',
+        })
+      );
+    }
+  });
+
+  it('should include hiddenMotivation in character-image API request', async () => {
+    render(<DirectorConfigForm />);
+
+    const themeInput = screen.getByPlaceholderText(VIBE_CONFIGS.VIRAL_NEON.linguisticTone.placeholders.theme);
+    await act(async () => {
+      fireEvent.change(themeInput, { target: { value: 'A test theme for the skit' } });
+    });
+    await waitFor(() => {
+      expect(themeInput).toHaveValue('A test theme for the skit');
+    });
+
+    // Mock create session, then character + script, then update session + character image
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          characters: [
+            {
+              name: 'Test Character',
+              archetypeLabel: 'The Test',
+              personalityTraits: ['Testy'],
+              hiddenMotivation: 'To test hidden motivation inclusion',
+              imagePrompt: 'A test character',
+              attributes: [{ name: 'Test', rating: 50 }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          title: 'Test Script',
+          length: '2 minutes',
+          description: 'A test script',
+          scenes: [],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ imageUrl: 'https://example.com/img.png' }),
+      });
+
+    const submitButton = screen.getByRole('button', { name: /send it/i });
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    // Verify hiddenMotivation is included in character-image API call
+    const imageCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('/api/openai/character-image')
+    );
+
+    expect(imageCall).toBeDefined();
+    if (imageCall) {
+      const requestBody = JSON.parse((imageCall[1] as RequestInit | undefined)?.body as string);
+      expect(requestBody.character).toBeDefined();
+      expect(requestBody.character.hiddenMotivation).toBe('To test hidden motivation inclusion');
+      expect(requestBody.character.name).toBe('Test Character');
+      expect(requestBody.character.archetypeLabel).toBe('The Test');
+      expect(requestBody.character.personalityTraits).toEqual(['Testy']);
+      expect(requestBody.character.attributes).toEqual([{ name: 'Test', rating: 50 }]);
     }
   });
 });

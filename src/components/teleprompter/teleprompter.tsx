@@ -25,7 +25,12 @@ import {
   initializePartyKitClient,
   onPerformanceProgress,
   advancePerformance,
+  getConnectionStatus,
+  onConnectionStatusChange,
+  updateSessionState,
 } from '@/src/lib/partykit/client';
+import type { ConnectionStatus } from '@/src/lib/partykit/client';
+import { ConnectionStatusBadge } from '@/src/components/ui/connection-status-badge';
 
 interface TeleprompterProps {
   sessionCode: string;
@@ -43,13 +48,18 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
   const setSessionState = useSetAtom(sessionStateAtom);
   const storedSessionCode = useAtomValue(sessionCodeAtom);
   const router = useRouter();
-  const { visualTokens } = useVibe();
+  const { visualTokens, getButtonLabel } = useVibe();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLDivElement>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(getConnectionStatus());
+  const [hasExceededExpectedDuration, setHasExceededExpectedDuration] = useState(false);
+  // Track previous startedAt to detect changes and avoid synchronous setState in effect
+  // Guard against null progress during initial render
+  const prevStartedAtRef = useRef<number | null>(progress?.startedAt ?? null);
   
-  // Derive pause state from progress
-  const isPaused = progress.pausedAt !== null;
+  // Derive pause state from progress (guard against null)
+  const isPaused = progress?.pausedAt !== null && progress?.pausedAt !== undefined;
 
   // Flatten script into linear lines
   const scriptLines = useMemo(() => {
@@ -57,32 +67,69 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     return flattenScriptLines(script);
   }, [script]);
 
-  // Get upcoming lines
+  // Extract currentLineIndex for dependency tracking (avoid reference equality issues)
+  const currentLineIndex = progress?.currentLineIndex ?? 0;
+
+  // Get upcoming lines (guard against null progress)
   const upcomingLines = useMemo(
-    () => getUpcomingLines(scriptLines, progress.currentLineIndex, 3),
-    [scriptLines, progress.currentLineIndex]
+    () => getUpcomingLines(scriptLines, currentLineIndex, 3),
+    [scriptLines, currentLineIndex]
   );
+
+  // Use default progress if null (shouldn't happen, but guard against it)
+  const safeProgress = useMemo(() => progress ?? {
+    currentLineIndex: 0,
+    currentScene: 0,
+    startedAt: null,
+    pausedAt: null,
+    completedLines: [],
+    advancementControl: {
+      lastAdvancedBy: null,
+      lastAdvancedAt: null,
+      directorOverride: false,
+    },
+  }, [progress]);
 
   // Initialize PartyKit and listen for progress updates
   useEffect(() => {
     if (!sessionCode) return;
     
     initializePartyKitClient(sessionCode);
-    const unsubscribe = onPerformanceProgress((data) => {
+    const unsubscribeProgress = onPerformanceProgress((data) => {
       if (data.sessionId === sessionCode) {
-        setProgress((prev) => ({
-          ...prev,
-          currentLineIndex: data.progress.currentLineIndex,
-          currentScene: data.progress.currentScene,
-          startedAt: data.progress.startedAt,
-          pausedAt: data.progress.pausedAt,
-          completedLines: data.progress.completedLines,
-        }));
+        setProgress((prev) => {
+          // Guard against null prev
+          const baseProgress = prev ?? {
+            currentLineIndex: 0,
+            currentScene: 0,
+            startedAt: null,
+            pausedAt: null,
+            completedLines: [],
+            advancementControl: {
+              lastAdvancedBy: null,
+              lastAdvancedAt: null,
+              directorOverride: false,
+            },
+          };
+          return {
+            ...baseProgress,
+            currentLineIndex: data.progress.currentLineIndex,
+            currentScene: data.progress.currentScene,
+            startedAt: data.progress.startedAt,
+            pausedAt: data.progress.pausedAt,
+            completedLines: data.progress.completedLines,
+          };
+        });
       }
     });
 
+    const unsubscribeConnection = onConnectionStatusChange((status) => {
+      setConnectionStatus(status);
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeProgress();
+      unsubscribeConnection();
     };
   }, [sessionCode, setProgress]);
 
@@ -98,18 +145,37 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       const scrollTop = lineElement.offsetTop - containerRect.height / 2 + lineRect.height / 2;
 
       // Apply vibe-appropriate scrolling behavior
-      const scrollBehavior = visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth';
+      let scrollBehavior: ScrollBehavior = visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth';
+
+      // Respect reduced motion preferences from OS / ThemeProvider
+      try {
+        if (typeof window !== 'undefined') {
+          const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+          const reducedFromOS = !!mediaQuery && mediaQuery.matches;
+          const reducedFromTheme =
+            typeof document !== 'undefined' &&
+            document.documentElement.getAttribute('data-reduced-motion') === 'reduce';
+
+          if (reducedFromOS || reducedFromTheme) {
+            scrollBehavior = 'auto';
+          }
+        }
+      } catch {
+        // If matchMedia is not available or throws, fall back to existing behavior
+      }
 
       container.scrollTo({
         top: scrollTop,
-        behavior: scrollBehavior as ScrollBehavior,
+        behavior: scrollBehavior,
       });
     }
-  }, [progress.currentLineIndex, visualTokens.animationStyle]);
+    }, [safeProgress.currentLineIndex, visualTokens.animationStyle]);
 
   // Handle start performance (Director only)
   const handleStart = useCallback(() => {
     if (participant?.role !== 'director') return;
+    if (connectionStatus !== 'connected') return;
+    if (!progress) return;
 
     const startedAt = Date.now();
     const updatedProgress: PerformanceProgress = {
@@ -132,11 +198,17 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       pausedAt: null,
       completedLines: progress.completedLines,
     });
-  }, [participant, progress, sessionCode, setProgress]);
+  }, [participant, progress, sessionCode, setProgress, connectionStatus]);
 
   // Handle script advancement
   const handleAdvance = useCallback(() => {
-    if (!script || progress.currentLineIndex >= scriptLines.length - 1) {
+    if (!script || !progress) return;
+    if (progress.currentLineIndex >= scriptLines.length - 1) {
+      return;
+    }
+
+    if (connectionStatus !== 'connected') {
+      // Avoid drifting out of sync when the network is unhealthy (T190/T191).
       return;
     }
 
@@ -167,11 +239,12 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       pausedAt: progress.pausedAt,
       completedLines: newCompletedLines,
     });
-  }, [script, scriptLines, progress, participant, sessionCode, setProgress]);
+  }, [script, scriptLines, progress, participant, sessionCode, setProgress, connectionStatus]);
 
   // Handle pause (Director only)
   const handlePause = useCallback(() => {
     if (participant?.role !== 'director') return;
+    if (connectionStatus !== 'connected') return;
 
     const pausedAt = Date.now();
     const updatedProgress: PerformanceProgress = {
@@ -194,11 +267,13 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       pausedAt,
       completedLines: progress.completedLines,
     });
-  }, [participant, progress, sessionCode, setProgress]);
+  }, [participant, progress, sessionCode, setProgress, connectionStatus]);
 
   // Handle resume (Director only)
   const handleResume = useCallback(() => {
     if (participant?.role !== 'director') return;
+    if (connectionStatus !== 'connected') return;
+    if (!progress) return;
 
     const updatedProgress: PerformanceProgress = {
       ...progress,
@@ -220,11 +295,60 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       pausedAt: null,
       completedLines: progress.completedLines,
     });
-  }, [participant, progress, sessionCode, setProgress]);
+  }, [participant, progress, sessionCode, setProgress, connectionStatus]);
+
+  // Watch for significantly long performances and surface a soft warning so
+  // Directors know it's safe to wrap gracefully when things run long (T193).
+  useEffect(() => {
+    const prevStartedAt = prevStartedAtRef.current;
+    const currentStartedAt = safeProgress.startedAt;
+    
+    // Only reset when startedAt changes from truthy to falsy (performance stopped)
+    if (!currentStartedAt && prevStartedAt !== null) {
+      // Use setTimeout to defer state update and avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => {
+        setHasExceededExpectedDuration(false);
+      }, 0);
+      prevStartedAtRef.current = null;
+      return () => clearTimeout(timeoutId);
+    }
+    
+    // Update ref when startedAt becomes truthy
+    if (currentStartedAt && prevStartedAt !== currentStartedAt) {
+      prevStartedAtRef.current = currentStartedAt;
+    }
+
+    if (!currentStartedAt) {
+      return;
+    }
+
+    const EXPECTED_DURATION_MS = 10 * 60 * 1000; // 10 minutes heuristic
+
+    const checkDuration = () => {
+      const now = Date.now();
+      const elapsed = now - currentStartedAt;
+      const shouldShow = elapsed > EXPECTED_DURATION_MS;
+      // Only update if the value actually needs to change
+      setHasExceededExpectedDuration((prev) => (shouldShow !== prev ? shouldShow : prev));
+    };
+
+    checkDuration();
+    const interval = setInterval(checkDuration, 30000);
+
+    return () => clearInterval(interval);
+  }, [safeProgress.startedAt]);
 
   // Handle exit/stop performance
   const handleExit = useCallback(() => {
-    // Reset performance progress
+    // Mark the session as completed and transition everyone to Wrap Party,
+    // even if the performance ends earlier than the script length (T192).
+    setSessionState('completed');
+
+    if (storedSessionCode && participant?.role === 'director') {
+      updateSessionState(storedSessionCode, 'completed');
+    }
+
+    // Reset local performance progress so subsequent sessions start clean.
     setProgress({
       currentLineIndex: 0,
       currentScene: 0,
@@ -238,25 +362,21 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       },
     });
 
-    // Set session state back to casting (keep session active)
-    setSessionState('casting');
+    const targetSessionCode = storedSessionCode || sessionCode;
 
-    // Navigate based on role
-    if (participant?.role === 'director') {
-      router.push('/director-desk');
-    } else if (storedSessionCode) {
-      router.push(`/join/${storedSessionCode}`);
+    if (targetSessionCode) {
+      router.push(`/wrap-party/${targetSessionCode}`);
     } else {
       router.push('/');
     }
-  }, [participant, storedSessionCode, router, setProgress, setSessionState]);
+  }, [participant, storedSessionCode, sessionCode, router, setProgress, setSessionState]);
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
-        if (!isPaused && !progress.advancementControl.directorOverride) {
+        if (!isPaused && !safeProgress.advancementControl.directorOverride) {
           handleAdvance();
         }
       }
@@ -271,7 +391,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [handleAdvance, isPaused, progress.advancementControl.directorOverride]);
+  }, [handleAdvance, isPaused, safeProgress.advancementControl.directorOverride]);
 
 
   if (!script || scriptLines.length === 0) {
@@ -282,18 +402,17 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
     );
   }
 
-  const canAdvance = !isPaused && progress.currentLineIndex < scriptLines.length - 1;
+  const isConnected = connectionStatus === 'connected';
+  const canAdvance = isConnected && !isPaused && safeProgress.currentLineIndex < scriptLines.length - 1;
   const isDirector = participant?.role === 'director';
-  const hasStarted = progress.startedAt !== null;
-  const { getButtonLabel } = useVibe();
-
+  const hasStarted = safeProgress.startedAt !== null && safeProgress.startedAt !== undefined;
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--color-bg)' }}>
       {/* Fixed Header with Controls (Director only) */}
       {isDirector && (
-        <div 
+        <div
           className="sticky top-0 z-10 border-b p-4"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg)',
             borderColor: 'var(--color-primary)',
           }}
@@ -304,15 +423,25 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                 {script.title}
               </h1>
               <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
-                Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
+                Scene {safeProgress.currentScene + 1} • Line {safeProgress.currentLineIndex + 1} of {scriptLines.length}
               </p>
+              {hasExceededExpectedDuration && (
+                <p className="mt-1 text-xs opacity-80" style={{ color: 'var(--color-accent)' }}>
+                  This performance has run longer than expected. It&apos;s okay to wrap whenever it feels right.
+                </p>
+              )}
             </div>
-            {/* Timing Indicator */}
-            <div className="shrink-0 min-w-[200px]">
-              <TimingIndicator 
-                estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
-                isPaused={isPaused}
-              />
+            {/* Timing Indicator and connection status */}
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="hidden sm:block">
+                <ConnectionStatusBadge variant="compact" />
+              </div>
+              <div className="shrink-0 min-w-[200px]">
+                <TimingIndicator
+                  estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
+                  isPaused={isPaused}
+                />
+              </div>
             </div>
           </div>
           {/* Control Buttons */}
@@ -410,7 +539,7 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                 {script.title}
               </h1>
               <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
-                Scene {progress.currentScene + 1} • Line {progress.currentLineIndex + 1} of {scriptLines.length}
+                Scene {safeProgress.currentScene + 1} • Line {safeProgress.currentLineIndex + 1} of {scriptLines.length}
               </p>
             </div>
             {/* Timing Indicator */}
@@ -434,8 +563,8 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
       >
         <div className="max-w-4xl mx-auto space-y-4">
           {scriptLines.map((line, index) => {
-            const isCurrent = index === progress.currentLineIndex;
-            const isCompleted = progress.completedLines.includes(index);
+            const isCurrent = index === safeProgress.currentLineIndex;
+            const isCompleted = safeProgress.completedLines.includes(index);
             const isUpcoming = upcomingLines.some((l) => l.index === index);
             const isMyLine =
               line.type === 'dialogue' && line.characterName === participant?.characterAssignment?.name;
@@ -482,11 +611,10 @@ export function Teleprompter({ sessionCode }: TeleprompterProps) {
                 {/* Visual timing cue - pulsing indicator for current line */}
                 {isCurrent && !isPaused && (
                   <div 
-                    className="absolute top-0 left-0 h-1 rounded-t"
+                    className="absolute top-0 left-0 h-1 rounded-t teleprompter-current-line-indicator"
                     style={{
                       width: '100%',
                       backgroundColor: 'var(--color-accent)',
-                      animation: 'pulse 2s ease-in-out infinite',
                     }}
                   />
                 )}

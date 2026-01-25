@@ -15,6 +15,7 @@ import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAtom } from 'jotai';
 import { vibeAtom } from '@/src/state/atoms/vibe-atom';
+import { clearSessionState } from '@/src/lib/utils/session-state-cleanup';
 import { VibeCard } from './vibe-card';
 import type { VibeType } from '@/src/state/types/vibe';
 
@@ -32,6 +33,12 @@ export function VibeSelector() {
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const handleVibeSelect = (vibe: VibeType) => {
+    proceedWithVibeChange(vibe);
+  };
+
+  const proceedWithVibeChange = (vibe: VibeType) => {
+    clearSessionState();
+
     const startTime = performance.now();
     setCurrentVibe(vibe);
     
@@ -87,49 +94,49 @@ export function VibeSelector() {
 
   return (
     <div
-      role="group"
-      aria-label="Select a production vibe"
-      aria-roledescription="Vibe selection grid"
-      data-vibe-selector
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '2rem',
-        padding: '2rem',
-        maxWidth: '1200px',
-        margin: '0 auto',
-        // Add cross-dissolve transition container
-        opacity: 1,
-        transition: 'opacity 0.5s ease',
-      }}
-    >
-      {ALL_VIBES.map((vibe, index) => (
-        <div
-          key={vibe}
-          role="none"
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            // Handle arrow keys at container level for better navigation
-            if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
-              handleKeyDown(e, index);
-            }
-          }}
-          style={{
-            // Cross-dissolve animation wrapper
-            transition: 'opacity 0.5s ease, transform 0.5s ease',
-          }}
-        >
-          <VibeCard
-            ref={(el) => {
-              cardRefs.current[index] = el;
+        role="group"
+        aria-label="Select a production vibe"
+        aria-roledescription="Vibe selection grid"
+        data-vibe-selector
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '2rem',
+          padding: '2rem',
+          maxWidth: '1200px',
+          margin: '0 auto',
+          // Add cross-dissolve transition container
+          opacity: 1,
+          transition: 'opacity 0.5s ease',
+        }}
+      >
+        {ALL_VIBES.map((vibe, index) => (
+          <div
+            key={vibe}
+            role="none"
+            tabIndex={-1}
+            onKeyDown={(e) => {
+              // Handle arrow keys at container level for better navigation
+              if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
+                handleKeyDown(e, index);
+              }
             }}
-            vibe={vibe}
-            onSelect={handleVibeSelect}
-            isSelected={vibe === currentVibe}
-            previewImage={`/vibes/${vibe.toLowerCase()}-preview.png`}
-          />
-        </div>
-      ))}
-    </div>
+            style={{
+              // Cross-dissolve animation wrapper
+              transition: 'opacity 0.5s ease, transform 0.5s ease',
+            }}
+          >
+            <VibeCard
+              ref={(el) => {
+                cardRefs.current[index] = el;
+              }}
+              vibe={vibe}
+              onSelect={handleVibeSelect}
+              isSelected={vibe === currentVibe}
+              previewImage={`/vibes/${vibe.toLowerCase()}-preview.png`}
+            />
+          </div>
+        ))}
+      </div>
   );
 }

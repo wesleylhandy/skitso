@@ -54,6 +54,9 @@ export function SessionShare() {
           style={{
             backgroundColor: 'var(--color-primary)',
             color: 'var(--color-bg)',
+            cursor: 'pointer',
+            minHeight: '44px',
+            minWidth: '44px',
           }}
         >
           {copied ? 'Copied!' : getButtonLabel('share')}

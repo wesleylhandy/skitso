@@ -173,24 +173,34 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
     };
   }, [sessionCode, participant, cast, setCast, setParticipant, onAssignmentLocked]);
 
-  // Check if actor has a locked assignment
-  const hasLockedAssignment = participant?.characterAssignment && 
+  // CRITICAL: Only show assignment UI if participant belongs to current session
+  // This prevents stale localStorage data from previous sessions showing confirmation modals
+  const participantBelongsToCurrentSession = participant?.sessionId === sessionCode;
+
+  // Check if actor has a locked assignment (only if participant belongs to current session)
+  const hasLockedAssignment = participantBelongsToCurrentSession &&
+    participant?.characterAssignment && 
     participant.assignmentStatus === 'locked';
 
-  // Check if actor has a pending assignment
-  const hasPendingAssignment = participant?.characterAssignment && 
+  // Check if actor has a pending assignment (only if participant belongs to current session)
+  const hasPendingAssignment = participantBelongsToCurrentSession &&
+    participant?.characterAssignment && 
     participant.assignmentStatus === 'pending';
 
-  // Check if actor has requested a character
-  const hasRequested = participant?.assignmentStatus === 'requested';
+  // Check if actor has requested a character (only if participant belongs to current session)
+  const hasRequested = participantBelongsToCurrentSession &&
+    participant?.assignmentStatus === 'requested';
 
   // Get available characters (not locked to other participants)
-  const availableCharacters = cast.filter((char) => 
-    !char.isLocked || char.participantId === participant?.id
-  );
+  // Only show if participant belongs to current session
+  const availableCharacters = participantBelongsToCurrentSession
+    ? cast.filter((char) => 
+        !char.isLocked || char.participantId === participant?.id
+      )
+    : [];
 
   const handleRequestAssignment = async (characterId: string) => {
-    if (!sessionCode || !participant) {
+    if (!sessionCode || !participant || participant.sessionId !== sessionCode) {
       setError('Session or participant not found');
       return;
     }
@@ -261,6 +271,20 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
     }
   };
 
+  // Don't render assignment UI if participant doesn't belong to current session
+  // This prevents stale localStorage data from showing confirmation modals
+  if (!participantBelongsToCurrentSession) {
+    return (
+      <div className="space-y-6">
+        <div className="p-6 border rounded-lg" style={{ borderColor: visualTokens.primaryColor }}>
+          <p className="text-sm" style={{ color: visualTokens.textColor, opacity: 0.8 }}>
+            Please join this session to see available characters.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (hasLockedAssignment) {
     return (
       <div className="space-y-6">
@@ -297,6 +321,7 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
                   style={{
                     backgroundColor: visualTokens.primaryColor,
                     color: visualTokens.bgColor,
+                    pointerEvents: loading ? 'none' : 'auto',
                   }}
                 >
                   {loading ? 'Confirming...' : 'Confirm Assignment'}
@@ -325,6 +350,7 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
             style={{
               backgroundColor: visualTokens.accentColor || visualTokens.primaryColor,
               color: visualTokens.bgColor,
+              pointerEvents: 'auto',
             }}
           >
             Preview Script
@@ -420,6 +446,7 @@ export function ActorPreview({ onAssignmentLocked }: ActorPreviewProps) {
                 style={{
                   backgroundColor: visualTokens.primaryColor,
                   color: visualTokens.bgColor,
+                  pointerEvents: 'auto',
                 }}
               >
                 Close

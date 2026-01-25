@@ -1,17 +1,17 @@
 /**
  * Current Script Atom
- * 
+ *
  * Manages the generated script for the current session
- * with localStorage persistence.
+ * with persistent storage backed by safe browser storage.
  */
 
-import { atomWithStorage } from 'jotai/utils';
 import type { Script } from '../types/session';
+import { createPersistentAtom } from '../utils/safe-storage';
 
 /**
- * Current script atom with localStorage persistence
- * 
+ * Current script atom with persistent storage
+ *
  * Key: 'current_script'
  * Default: null
  */
-export const currentScriptAtom = atomWithStorage<Script | null>('current_script', null);
+export const currentScriptAtom = createPersistentAtom<Script | null>('current_script', null);

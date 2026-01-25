@@ -336,8 +336,8 @@ export function CharacterAssignmentModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 overscroll-contain">
           {error && (
-            <div className="p-4 border rounded-lg" style={{ borderColor: 'red' }}>
-              <p className="text-sm" style={{ color: 'red' }}>{error}</p>
+            <div className="p-4 border rounded-lg" style={{ borderColor: visualTokens.errorColor }}>
+              <p className="text-sm" style={{ color: visualTokens.errorColor }}>{error}</p>
             </div>
           )}
 

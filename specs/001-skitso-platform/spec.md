@@ -41,6 +41,10 @@ The application operates as a linear session flow: Vibe Selection → Director's
 - Q: What is the Character Dossier component, and how does it relate to existing character viewing functionality? → A: Character Dossier is a detailed character view screen accessible from Casting Couch, showing full character information (name, archetype, traits, visual representation, hidden motivation for assigned Actor)
 - Q: What specific visual and textual differences should Director's Desk exhibit across themes beyond basic color/font changes? → A: Each theme has distinct layout patterns (card styles, spacing, component arrangements), section title wording, button label terminology, placeholder text phrasing, and visual effects (glows, borders, shadows) - all defined in VibeContext config
 
+### Session 2026-01-24
+
+- Q: For the new prompt-injection hardening tasks (T218–T220), should their scope apply only to script generation or to all three OpenAI flows (character, script, image)? → A: Apply to all three OpenAI flows (character, script, image)
+
 ### Session 2025-01-21
 
 - Q: What session storage strategy should be used for MVP - PartyKit storage or external database? → A: Use PartyKit storage for MVP (24h expiration sufficient per FR-9 requirement). External database can be added post-MVP if longer persistence, query capabilities, or analytics are needed.
@@ -530,6 +534,7 @@ The application operates as a linear session flow: Vibe Selection → Director's
 - Recordings are accessible only to session participants and those with share links
 - API keys and sensitive data are not exposed to client
 - Input validation prevents injection attacks
+- Prompt-injection protections are applied consistently across all AI generation endpoints (character, script, and character image) in both prompt templates and regression tests
 - Rate limiting prevents abuse
 
 **Success Criteria:**

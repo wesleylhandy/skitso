@@ -18,6 +18,7 @@ import { currentScriptAtom } from '@/src/state/atoms/script-atom';
 import { ImageDownloadButton } from '@/src/components/ui/image-download-button';
 import { CharacterImagePlaceholder } from '@/src/components/ui/character-image-placeholder';
 import { flattenScriptLines, getCharacterLines } from '@/src/components/teleprompter/script-lines';
+import { normalizeImageUrl, isCloudinaryUrl } from '@/src/lib/partykit/client';
 import type { Character } from '@/src/state/types/session';
 
 interface CharacterDossierProps {
@@ -79,20 +80,37 @@ export function CharacterDossier({ character, onBack }: CharacterDossierProps) {
           border: `2px solid ${visualTokens.primaryColor}`,
         }}>
           {character.visualRepresentation.imageUrl && character.visualRepresentation.imageUrl.length > 0 ? (
-            <>
-              <Image
-                src={character.visualRepresentation.imageUrl}
-                alt={character.name}
-                fill
-                className="object-cover"
-                loading="lazy"
-                sizes="(max-width: 768px) 100vw, 50vw"
-              />
-              <ImageDownloadButton
-                imageUrl={character.visualRepresentation.imageUrl}
-                filename={`${character.name}-character-image.png`}
-              />
-            </>
+            (() => {
+              const imageUrl = normalizeImageUrl(character.visualRepresentation.imageUrl, character.sessionId, character.id);
+              const useImg = imageUrl.startsWith('data:') ||
+                imageUrl.includes('/parties/main/') || imageUrl.includes('localhost:1999/parties') ||
+                isCloudinaryUrl(imageUrl);
+              return (
+                <>
+                  {useImg ? (
+                    <img
+                      src={imageUrl}
+                      alt={character.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <Image
+                      src={imageUrl}
+                      alt={character.name}
+                      fill
+                      className="object-cover"
+                      loading="lazy"
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                    />
+                  )}
+                  <ImageDownloadButton
+                    imageUrl={imageUrl}
+                    filename={`${character.name}-character-image.png`}
+                  />
+                </>
+              );
+            })()
           ) : (
             <CharacterImagePlaceholder characterName={character.name} />
           )}

@@ -15,7 +15,7 @@ interface ErrorMessageProps {
 }
 
 export function ErrorMessage({ errorType = 'network', message, className = '' }: ErrorMessageProps) {
-  const { getErrorMessage } = useVibe();
+  const { getErrorMessage, visualTokens } = useVibe();
   
   const displayMessage = message || getErrorMessage(errorType);
 
@@ -25,7 +25,7 @@ export function ErrorMessage({ errorType = 'network', message, className = '' }:
       role="alert"
       aria-live="polite"
     >
-      <p className="text-[var(--color-error,red)]">{displayMessage}</p>
+      <p style={{ color: visualTokens.errorColor }}>{displayMessage}</p>
     </div>
   );
 }

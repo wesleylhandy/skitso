@@ -14,6 +14,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@vercel/blob": "^2.0.1",
+    "cloudinary": "^2.9.0",
     "jotai": "^2.16.2",
     "next": "16.1.1",
     "openai": "^6.16.0",
@@ -21,6 +23,7 @@
     "partysocket": "^1.1.10",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "web-vitals": "^4.2.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

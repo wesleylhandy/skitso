@@ -145,7 +145,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - [X] T035 [US2] [P] Implement tone preference dropdown in src/components/director/director-config-form.tsx
 - [X] T036 [US2] [P] Implement participant count input (2-10 range) in src/components/director/director-config-form.tsx
 - [X] T037 [US2] [P] Implement chaos level slider (1-10) in src/components/director/director-config-form.tsx
-- [ ] T038 [US2] [P] Add optional character pre-definition interface in src/components/director/director-config-form.tsx
+- [X] T038 [US2] [P] Add optional character pre-definition interface in src/components/director/director-config-form.tsx
 - [X] T039 [US2] Create Zod validation schema for configuration in src/lib/validation/session-config-schema.ts
 - [X] T040 [US2] Implement form validation using Zod schema in src/components/director/director-config-form.tsx
 - [X] T041 [US2] Style form to match active VibeContext (use CSS variables) in src/components/director/director-config-form.tsx
@@ -472,51 +472,65 @@ This document contains actionable, dependency-ordered tasks for implementing the
 
 ### Tasks
 
-- [ ] T170 Add keyboard navigation to all interactive elements across all components
-- [ ] T171 Add screen reader support (ARIA labels) to all components
-- [ ] T172 Verify color contrast meets WCAG 2.1 AA (4.5:1 normal, 3:1 large) for all vibes
-- [ ] T173 Ensure all touch targets are minimum 44x44px
-- [ ] T174 Add focus indicators to all interactive elements
-- [ ] T175 Add alternative text to all images (including generated character images)
-- [ ] T176 Implement reduced motion preferences support in src/components/vibes/theme-provider.tsx
-- [ ] T177 Optimize bundle size (code splitting for Teleprompter, AI generation UI) in next.config.js
-- [ ] T178 Implement lazy loading for below-fold content
-- [ ] T179 Add performance monitoring (Core Web Vitals) in src/lib/monitoring/performance.ts
-- [ ] T180 Implement metrics collection for script generation time, sync latency, theme switch time in src/lib/monitoring/metrics.ts
-- [ ] T181 Implement session count monitoring for scalability tracking in src/lib/monitoring/session-metrics.ts
-- [ ] T181a [P] Create load testing suite for 1,000 concurrent sessions in tests/load/scalability.test.ts
-- [ ] T181b [P] Implement load testing for AI generation queue (100 concurrent requests) in tests/load/ai-queue.test.ts
-- [ ] T181c [P] Create session storage scaling test (10,000 active sessions) in tests/load/session-storage.test.ts
-- [ ] T181d [P] Implement performance monitoring under load (verify NFR-1 targets maintained) in tests/load/performance-under-load.test.ts
-- [ ] T181e [P] Create AI queue management system for handling 100 concurrent requests in src/lib/openai/queue-manager.ts
-- [ ] T181f [P] Implement queue prioritization and throttling for AI generation requests in src/lib/openai/queue-manager.ts
-- [ ] T181g [P] Add session storage optimization for 10,000+ active sessions in src/lib/utils/session-storage.ts
-- [ ] T182 Implement comprehensive error boundaries in src/components/error-boundary.tsx
-- [ ] T183 Add error handling for network interruptions in all API calls
-- [ ] T184 Add error handling for browser storage limits in src/state/atoms/*.ts
-- [ ] T185 Implement session expiration handling (24 hours) in src/lib/utils/session-persistence.ts
-- [ ] T186 Implement session cleanup cron job or background task for expired sessions in src/lib/utils/session-cleanup.ts
-- [ ] T187 Handle edge case: User closes browser before participants join (session persistence)
-- [ ] T188 Handle edge case: User selects different vibe after starting configuration (reset/warn)
-- [ ] T189 Handle edge case: Actor joins mid-performance (wait for next scene)
-- [ ] T190 Handle edge case: Actor loses connection during performance (reconnection)
-- [ ] T191 Handle edge case: One participant has poor connection (graceful degradation)
-- [ ] T192 Handle edge case: Director ends performance early (smooth transition to Wrap Party)
-- [ ] T193 Handle edge case: Performance exceeds expected duration (graceful handling)
-- [ ] T194 Add loading states and skeleton screens for all async operations
-- [ ] T195 Implement session cleanup on Wrap Party completion in src/lib/utils/session-cleanup.ts
-- [ ] T196 Test complete user flow end-to-end (Vibe Selection → Wrap Party)
-- [ ] T197 Performance audit: Verify <3s load time, <200KB initial JS, 60fps teleprompter scrolling
-- [ ] T198 [P] Conduct security audit (OWASP Top 10, dependency vulnerabilities, API security) in docs/security/audit-report.md
-- [ ] T199 [P] Implement security testing suite (input validation, injection attacks, XSS prevention) in tests/security/security.test.ts
-- [ ] T200 [P] Verify session code entropy meets 128-bit minimum requirement in tests/security/session-code-security.test.ts
-- [ ] T201 [P] Test API key and sensitive data exposure prevention (verify no client-side exposure) in tests/security/data-exposure.test.ts
-- [ ] T202 [P] Implement security headers (CSP, X-Frame-Options, HSTS) in next.config.js or middleware
-- [ ] T203 [P] Create input sanitization utilities to prevent injection attacks in src/lib/security/input-sanitizer.ts
-- [ ] T204 [P] Verify rate limiting prevents abuse (10 requests/user/hour) in tests/security/rate-limiting.test.ts
-- [ ] T205 [P] Test browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions) in tests/compatibility/browser-compat.test.ts
-- [ ] T206 [P] Test mobile browser compatibility (iOS Safari, Chrome Mobile) in tests/compatibility/mobile-compat.test.ts
-- [ ] T207 [P] Verify progressive enhancement (core functionality without JavaScript) in tests/compatibility/progressive-enhancement.test.ts
+- [X] T170 Add keyboard navigation to all interactive elements across all components
+- [X] T171 Add screen reader support (ARIA labels) to all components
+- [X] T172 Verify color contrast meets WCAG 2.1 AA (4.5:1 normal, 3:1 large) for all vibes
+- [X] T173 Ensure all touch targets are minimum 44x44px
+- [X] T174 Add focus indicators to all interactive elements
+- [X] T175 Add alternative text to all images (including generated character images)
+- [X] T176 Implement reduced motion preferences support in src/components/vibes/theme-provider.tsx
+- [X] T177 Optimize bundle size (code splitting for Teleprompter, AI generation UI) in next.config.js
+- [X] T178 Implement lazy loading for below-fold content
+- [X] T179 Add performance monitoring (Core Web Vitals) in src/lib/monitoring/performance.ts
+- [X] T180 Implement metrics collection for script generation time, sync latency, theme switch time in src/lib/monitoring/metrics.ts
+- [X] T181 Implement session count monitoring for scalability tracking in src/lib/monitoring/session-metrics.ts
+- [X] T181a [P] Create load testing suite for 1,000 concurrent sessions in tests/load/scalability.test.ts
+- [X] T181b [P] Implement load testing for AI generation queue (100 concurrent requests) in tests/load/ai-queue.test.ts
+- [X] T181c [P] Create session storage scaling test (10,000 active sessions) in tests/load/session-storage.test.ts
+- [X] T181d [P] Implement performance monitoring under load (verify NFR-1 targets maintained) in tests/load/performance-under-load.test.ts
+- [X] T181e [P] Create AI queue management system for handling 100 concurrent requests in src/lib/openai/queue-manager.ts
+- [X] T181f [P] Implement queue prioritization and throttling for AI generation requests in src/lib/openai/queue-manager.ts
+- [X] T181g [P] Add session storage optimization for 10,000+ active sessions in src/lib/utils/session-storage.ts
+- [X] T182 Implement comprehensive error boundaries in src/components/error-boundary.tsx
+- [X] T183 Add error handling for network interruptions in all API calls
+- [X] T184 Add error handling for browser storage limits in src/state/atoms/*.ts
+-- [X] T185 Implement session expiration handling (24 hours) in src/lib/utils/session-persistence.ts
+-- [X] T186 Implement session cleanup cron job or background task for expired sessions in src/lib/utils/session-cleanup.ts
+- [X] T187 Handle edge case: User closes browser before participants join (session persistence)
+- [X] T188 Handle edge case: User selects different vibe after starting configuration (reset/warn)
+- [X] T189 Handle edge case: Actor joins mid-performance (wait for next scene)
+- [X] T190 Handle edge case: Actor loses connection during performance (reconnection)
+- [X] T191 Handle edge case: One participant has poor connection (graceful degradation)
+- [X] T192 Handle edge case: Director ends performance early (smooth transition to Wrap Party)
+- [X] T193 Handle edge case: Performance exceeds expected duration (graceful handling)
+- [X] T194 Add loading states and skeleton screens for all async operations
+-- [X] T195 Implement session cleanup on Wrap Party completion in src/lib/utils/session-cleanup.ts
+-- [X] T196 Test complete user flow end-to-end (Vibe Selection → Wrap Party)
+- [X] T197 Performance audit: Verify <3s load time, <200KB initial JS, 60fps teleprompter scrolling
+- [X] T198 [P] Conduct security audit (OWASP Top 10, dependency vulnerabilities, API security) in docs/security/audit-report.md
+- [X] T199 [P] Implement security testing suite (input validation, injection attacks, XSS prevention) in tests/security/security.test.ts
+- [X] T200 [P] Verify session code entropy meets 128-bit minimum requirement in tests/security/session-code-security.test.ts
+- [X] T201 [P] Test API key and sensitive data exposure prevention (verify no client-side exposure) in tests/security/data-exposure.test.ts
+- [X] T202 [P] Implement security headers (CSP, X-Frame-Options, HSTS) in next.config.js or middleware
+- [X] T203 [P] Create input sanitization utilities to prevent injection attacks in src/lib/security/input-sanitizer.ts
+- [X] T204 [P] Verify rate limiting prevents abuse (10 requests/user/hour) in tests/security/rate-limiting.test.ts
+- [X] T205 [P] Test browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions) in tests/compatibility/browser-compat.test.ts
+- [X] T206 [P] Test mobile browser compatibility (iOS Safari, Chrome Mobile) in tests/compatibility/mobile-compat.test.ts
+- [X] T207 [P] Verify progressive enhancement (core functionality without JavaScript) in tests/compatibility/progressive-enhancement.test.ts
+- [X] T208 Tighten Wrap Party initial state recovery: on wrap party mount, have src/components/wrap-party/wrap-party.tsx request PartyKit state:recover and hydrate wrapPartyDataAtom from recovered wrapPartyData (voting-interface.tsx continues to consume wrapPartyDataAtom only)
+- [X] T209 Gate Wrap Party access by completed session state: use PartyKit session status and/or presence of wrapPartyData so that full voting/sharing UI in src/components/wrap-party/wrap-party.tsx is shown only after performance completion (otherwise show a vibe-appropriate “not ready yet” or “expired” message)
+- [X] T210 [P] Refine join flow to be PartyKit-first: in src/app/join/[sessionCode]/page.tsx connect to PartyKit and issue state:recover immediately on mount, use recovered state to hydrate atoms, and fall back to /api/sessions/[sessionId]/route.ts only when PartyKit is unavailable (aligning with docs/STATE_FLOW_ANALYSIS.md recommended flow)
+- [X] T211 [P] Add server-side validation for wrap-party votes in parties/session.ts handleWrapPartyVote: ensure participantId belongs to the session, enforce at most one vote per (participantId, category) pair, validate category against VoteCategory and value ranges (1–5 for overall_quality, 1 for others), and ignore or reject malformed or unauthorized votes
+- [X] T212 [P] Remove redundant cast/script update paths so PartyKit is sole source of truth: rely on updateCast/updateScript PartyKit messages for cast/script changes from src/components/director/director-config-form.tsx, make cast/script fields optional in /api/sessions POST handler, and ensure parties/session.ts /create only broadcasts cast/script when they are provided explicitly (no duplicate broadcasts for the same update)
+- [X] T213 Ensure vibeAtom hydration from PartyKit on all party screens: on state:recovered and session:state:updated, hydrate vibeAtom in src/app/director-desk/page.tsx, src/app/join/[sessionCode]/page.tsx, src/app/stage/[sessionCode]/page.tsx, and src/app/wrap-party/[sessionCode]/page.tsx
+- [X] T216 [P] Implement per-session vibe locking rules in parties/session.ts and client hooks: add a vibeLockedAt flag in SessionState (and document/update SessionStatus usage in spec/plan), expose it via state:recovered/session:state:updated, and prevent mid-performance VibeContext changes on the client (except explicitly-allowed purely visual tweaks)
+- [X] T214 [P] Add vibe-aware text coverage for Join and Wrap Party flows: replace hard-coded headings, helper text, error, and empty-state messages in src/app/join/[sessionCode]/page.tsx, src/components/actor/actor-preview.tsx, src/components/wrap-party/wrap-party.tsx, and src/components/wrap-party/voting-interface.tsx with getSectionTitle/getPlaceholder/getButtonLabel/getErrorMessage
+- [X] T215 [P] Apply visualTokens consistently to party shell layouts: update page shells in src/app/join/[sessionCode]/page.tsx, src/app/stage/[sessionCode]/page.tsx, and src/app/wrap-party/[sessionCode]/page.tsx to use visualTokens.bgColor, primaryColor, accentColor, headerFont, and bodyFont
+- [X] T217 [P] Create reusable vibe-aware UI primitives: add VibeButton, VibeHeading, and VibePanel components in src/components/ui/ (backed by useVibe visualTokens and text registry) and migrate at least DirectorDeskPage header/buttons and WrapParty header/buttons to use them
+- [X] T217a [] Copy character, script, and image generation markdown prompt templates from specs/001-skitso-platform/prompts/ into a code-owned location (e.g., src/lib/openai/prompts/templates/) and update src/lib/openai/prompts/template-engine.ts and related helpers to load from the new paths so runtime behavior no longer depends on the original design-spec files
+- [X] T218 [P] Harden all OpenAI markdown prompt templates against prompt injection by boxing director-provided fields (theme, plot, jokes, directorDefinedCharacters, optionalImagePrompt) in explicit quoted blocks and adding anti-override language in prompt templates: character-generation-prompt.md, script-generation-prompt.md, and character-image-generation-prompt.md
+- [X] T219 [P] Update character, script, and image prompt helpers to treat director-provided text strictly as data (wrap in delimiters before substitution and compose with src/lib/security/input-sanitizer.ts) in src/lib/openai/prompts/character-prompt.ts, src/lib/openai/prompts/script-prompt.ts, and src/lib/openai/prompts/image-prompt.ts
+- [X] T220 [P] Add security regression tests that feed prompt-injection payloads through the director configuration flow and assert generated prompts for all three endpoints (character, script, image) preserve system instructions and JSON-output requirements in src/lib/openai/prompts/script-prompt.test.ts and corresponding tests for character-prompt and image-prompt
 
 ## Parallel Execution Examples
 
@@ -549,7 +563,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 
 ## Task Summary
 
-**Total Tasks:** 286
+**Total Tasks:** 290
 
 **Tasks by Phase:**
 - Phase 1 (Setup): 9 tasks
@@ -562,7 +576,7 @@ This document contains actionable, dependency-ordered tasks for implementing the
 - Phase 7 (US5 - Teleprompter): 20 tasks (removed duplicate T087b)
 - Phase 8 (US6 - Wrap Party): 19 tasks
 - Phase 9 (US7 - Premium): 19 tasks
-- Phase 10 (Polish): 42 tasks (added: scalability testing, security audit, browser compatibility testing)
+- Phase 10 (Polish): 46 tasks (added: scalability testing, security audit, browser compatibility testing, prompt injection hardening)
 
 **Parallel Opportunities:** 60+ tasks marked [P]
 

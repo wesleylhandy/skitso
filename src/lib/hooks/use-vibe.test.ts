@@ -144,4 +144,18 @@ describe('useVibe', () => {
       expect(indieSubmit).not.toBe(viralSubmit);
     });
   });
+
+  it('should fall back to DEFAULT_VIBE when vibe is invalid (e.g. corrupted storage)', async () => {
+    await act(async () => {
+      store.set(vibeAtom, 'INVALID_VIBE' as never);
+    });
+
+    const { result } = renderHook(() => useVibe());
+
+    expect(result.current.vibe).toBe('INVALID_VIBE');
+    expect(result.current.config).toBeDefined();
+    expect(result.current.config.id).toBe('VIRAL_NEON');
+    expect(result.current.visualTokens).toBeDefined();
+    expect(result.current.getButtonLabel('submit')).toBe('Send It');
+  });
 });

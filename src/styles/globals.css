@@ -76,6 +76,34 @@
   }
 }
 
+/* Teleprompter current-line timing indicator */
+.teleprompter-current-line-indicator {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Respect reduced motion preferences from OS and ThemeProvider */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  .logo-pulse,
+  .glitch-active,
+  .teleprompter-current-line-indicator {
+    animation: none !important;
+  }
+}
+
+html[data-reduced-motion='reduce'] {
+  scroll-behavior: auto !important;
+}
+
+html[data-reduced-motion='reduce'] .logo-pulse,
+html[data-reduced-motion='reduce'] .glitch-active,
+html[data-reduced-motion='reduce'] .teleprompter-current-line-indicator {
+  animation: none !important;
+}
+
 /* Logo animation classes */
 .logo-pulse {
   animation: pulse 2s ease-in-out infinite;

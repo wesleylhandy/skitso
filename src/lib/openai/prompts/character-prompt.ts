@@ -2,7 +2,7 @@
  * Character Generation Prompt Template
  * 
  * Generates the system prompt for character generation by loading
- * the markdown template from specs/001-skitso-platform/prompts/character-generation-prompt.md
+ * the markdown template from src/lib/openai/prompts/templates/character-generation-prompt.md
  * and performing variable substitution.
  */
 
@@ -10,6 +10,7 @@ import type { VibeType } from '@/src/state/types/vibe';
 import type { DirectorDefinedCharacter } from '@/src/lib/validation/session-config-schema';
 import { VIBE_CONFIGS } from '@/src/state/config/vibe-configs';
 import { VIRAL_NEON_SLANG_REGISTRY } from '@/src/lib/data/slang-registry';
+import { deepSanitizeObject, sanitizePlainText } from '@/src/lib/security/input-sanitizer';
 import { loadPromptTemplate, formatTemplateValue } from './template-engine';
 
 interface CharacterGenerationParams {
@@ -37,20 +38,25 @@ export function generateCharacterPrompt(params: CharacterGenerationParams): stri
 
   // Add optional variables
   if (directorDefinedCharacters && directorDefinedCharacters.length > 0) {
-    context.directorDefinedCharacters = formatTemplateValue(directorDefinedCharacters);
+    const safeCharacters = directorDefinedCharacters.map((c) =>
+      deepSanitizeObject<DirectorDefinedCharacter>(c)
+    );
+    context.directorDefinedCharacters = formatTemplateValue(safeCharacters);
   }
 
   if (theme) {
-    context.theme = theme;
+    const safeTheme = sanitizePlainText(theme);
+    context.theme = `"""${safeTheme}"""`;
   }
 
   if (tone) {
-    context.tone = tone;
+    const safeTone = sanitizePlainText(tone);
+    context.tone = `"""${safeTone}"""`;
   }
 
   // Load and process the template
   let prompt = loadPromptTemplate(
-    'specs/001-skitso-platform/prompts/character-generation-prompt.md',
+    'src/lib/openai/prompts/templates/character-generation-prompt.md',
     context
   );
 

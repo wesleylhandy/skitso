@@ -15,6 +15,10 @@ import { checkRateLimit } from '@/src/lib/openai/rate-limiter';
 import { generateImagePrompt } from '@/src/lib/openai/prompts/image-prompt';
 import { getModel } from '@/src/lib/openai/models';
 import type { Character } from '@/src/state/types/session';
+import {
+  isCloudinaryConfigured,
+  uploadCharacterImage,
+} from '@/src/lib/cloudinary/client';
 
 interface ImageResponse {
   imageUrl: string;
@@ -27,6 +31,7 @@ const RequestSchema = z.object({
     name: z.string(),
     archetypeLabel: z.string(),
     personalityTraits: z.array(z.string()),
+    hiddenMotivation: z.string(),
     attributes: z.array(
       z.object({
         name: z.string(),
@@ -36,6 +41,8 @@ const RequestSchema = z.object({
   }),
   vibeContext: z.enum(['VIRAL_NEON', 'INDIE_A24', 'SITCOM_STUDIO', 'BRAINROT_THEATER', 'QUIET_STUDIO']),
   optionalImagePrompt: z.string().optional(),
+  /** Party room id. Required when using Cloudinary (folder = skitso/sessionId). */
+  sessionId: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -60,7 +67,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { character, vibeContext, optionalImagePrompt } = validated.data;
+    const { character, vibeContext, optionalImagePrompt, sessionId } =
+      validated.data;
 
     // Generate the system prompt from the template
     const systemPrompt = generateImagePrompt({
@@ -214,9 +222,46 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to generate image');
     }
 
+    let finalImageUrl: string;
+
+    if (isCloudinaryConfigured() && sessionId) {
+      console.log('[character-image] Cloudinary configured, uploading generated image', {
+        characterId: character.id,
+        sessionId,
+        sourceType: imageUrl.startsWith('data:') ? 'data-url' : imageUrl.startsWith('http') ? 'http-url' : 'other',
+      });
+      try {
+        finalImageUrl = await uploadCharacterImage(imageUrl, sessionId, character.id);
+        console.log('[character-image] Using Cloudinary URL as character image', {
+          characterId: character.id,
+          sessionId,
+          cloudinaryUrl: finalImageUrl,
+        });
+      } catch (cloudinaryError) {
+        console.error('[character-image] Cloudinary upload failed; not returning data URL', {
+          characterId: character.id,
+          sessionId,
+          error: cloudinaryError instanceof Error ? cloudinaryError.message : String(cloudinaryError),
+        });
+        throw new Error(
+          `Cloudinary upload failed: ${cloudinaryError instanceof Error ? cloudinaryError.message : String(cloudinaryError)}`
+        );
+      }
+    } else if (isCloudinaryConfigured() && !sessionId) {
+      console.warn(
+        '[character-image] Cloudinary configured but sessionId missing in request; rejecting to avoid returning data URL.'
+      );
+      return NextResponse.json(
+        { error: 'sessionId required when Cloudinary is configured' },
+        { status: 400 }
+      );
+    } else {
+      finalImageUrl = imageUrl;
+    }
+
     const response: ImageResponse = {
-      imageUrl: imageUrl!,
-      imagePrompt: `${systemPrompt}\n\n${userMessage}`, // Include the prompt used for reference
+      imageUrl: finalImageUrl,
+      imagePrompt: `${systemPrompt}\n\n${userMessage}`,
     };
 
     return NextResponse.json(response, { status: 200 });

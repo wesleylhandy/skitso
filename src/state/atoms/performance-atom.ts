@@ -1,11 +1,11 @@
 /**
  * Performance Progress Atom
- * 
+ *
  * Manages the performance progress state (current line, completed lines, etc.)
- * with localStorage persistence.
+ * with persistent storage backed by safe browser storage.
  */
 
-import { atomWithStorage } from 'jotai/utils';
+import { createPersistentAtom } from '../utils/safe-storage';
 
 export interface PerformanceProgress {
   currentLineIndex: number;
@@ -34,12 +34,12 @@ const defaultProgress: PerformanceProgress = {
 };
 
 /**
- * Performance progress atom with localStorage persistence
- * 
+ * Performance progress atom with persistent storage
+ *
  * Key: 'performance_progress'
  * Default: Initial progress state
  */
-export const performanceProgressAtom = atomWithStorage<PerformanceProgress>(
+export const performanceProgressAtom = createPersistentAtom<PerformanceProgress>(
   'performance_progress',
   defaultProgress
 );

@@ -41,13 +41,13 @@ export function TimingIndicator({
   // Calculate when current line started (from lastAdvancedAt)
   // Use useMemo to derive the start time from progress state
   const lineStartTime = useMemo(() => {
-    // If we have a lastAdvancedAt timestamp, use it
-    if (progress.advancementControl.lastAdvancedAt) {
+    // If we have advancementControl and a lastAdvancedAt timestamp, use it
+    if (progress.advancementControl?.lastAdvancedAt) {
       return progress.advancementControl.lastAdvancedAt;
     }
     // Otherwise, return 0 - the elapsed time calculation will handle this
     return 0;
-  }, [progress.advancementControl.lastAdvancedAt, progress.currentLineIndex]);
+  }, [progress.advancementControl?.lastAdvancedAt]);
 
   // Update elapsed time every 100ms
   useEffect(() => {
@@ -65,16 +65,6 @@ export function TimingIndicator({
 
     return () => clearInterval(interval);
   }, [lineStartTime, isPaused]);
-
-  // Reset elapsed time when line changes - using functional update to avoid lint error
-  const prevLineIndexRef = useRef(progress.currentLineIndex);
-  useEffect(() => {
-    if (prevLineIndexRef.current !== progress.currentLineIndex) {
-      prevLineIndexRef.current = progress.currentLineIndex;
-      // Use functional update to avoid lint warning about synchronous setState
-      setElapsedTime(() => 0);
-    }
-  }, [progress.currentLineIndex]);
 
   // Calculate progress percentage (0-100)
   const progressPercent = useMemo(() => {

@@ -138,8 +138,8 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
             name: p.name || `Participant ${p.participantId.slice(-6)}`,
           }));
           setParticipants(participantsWithNames);
-          // Sync VibeContext from server
-          if (data.vibeContext !== vibe) {
+          // Sync VibeContext from server (omit vibe from effect deps to avoid setVibe→re-run→join loop)
+          if (data.vibeContext != null) {
             setVibe(data.vibeContext);
           }
         }
@@ -247,12 +247,21 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
 
       // Listen for cast updates (full cast sync)
       const unsubscribeCastUpdate = onCastUpdate((data) => {
-        console.log('Casting couch received cast:updated event:', data);
+        console.log('[CastingCouch] Received cast:updated event:', {
+          sessionId: data.sessionId,
+          castLength: data.cast?.length || 0,
+          charactersWithImages: data.cast?.filter((c) => c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0).length || 0,
+          currentSessionCode: sessionCode,
+          mounted,
+        });
         if (data.sessionId === sessionCode && mounted) {
-          console.log('Updating cast atom with full cast sync');
+          console.log('[CastingCouch] Updating cast atom with full cast sync:', {
+            castLength: data.cast.length,
+            charactersWithImages: data.cast.filter((c) => c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0).length,
+          });
           setCast(data.cast);
         } else {
-          console.log('Ignoring cast:updated event - session mismatch or unmounted', {
+          console.log('[CastingCouch] Ignoring cast:updated event - session mismatch or unmounted', {
             eventSessionId: data.sessionId,
             currentSessionCode: sessionCode,
             mounted,
@@ -279,11 +288,22 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
               return next;
             });
           } else if (message.type === 'assignment:confirmed' && mounted) {
-            const { participantId } = message.data;
+            const { participantId, characterId } = message.data;
+            // Remove assignment request
             setAssignmentRequests((prev) => {
               const next = new Map(prev);
               next.delete(participantId);
               return next;
+            });
+            // Update cast to reflect locked status
+            // The cast:updated event should also fire, but this ensures immediate UI update
+            setCast((currentCast) => {
+              return currentCast.map((char) => {
+                if (char.id === characterId) {
+                  return { ...char, isLocked: true, participantId };
+                }
+                return char;
+              });
             });
           }
         } catch (error) {
@@ -330,7 +350,7 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
         }
       }, 0);
     }
-  }, [sessionCode, participant, vibe, setVibe, setCast]);
+  }, [sessionCode, participant, setVibe, setCast]);
 
   // Get character assignment for a participant
   const getCharacterForParticipant = (participantId: string): Character | null => {
@@ -515,7 +535,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                           <button
                             onClick={() => setSelectedCharacterForDossier(character)}
                             className="text-sm underline transition-opacity hover:opacity-75 cursor-pointer"
-                            style={{ color: visualTokens.primaryColor }}
+                            style={{ 
+                              color: visualTokens.primaryColor,
+                              pointerEvents: 'auto',
+                            }}
                           >
                             View Dossier
                           </button>
@@ -523,7 +546,11 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                             <button
                               onClick={() => handleReassignCharacter(p.participantId, character.id)}
                               className="text-sm transition-opacity hover:opacity-75"
-                              style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}
+                              style={{ 
+                                color: visualTokens.accentColor || visualTokens.primaryColor,
+                                cursor: 'pointer',
+                                pointerEvents: 'auto',
+                              }}
                             >
                               Reassign
                             </button>
@@ -544,7 +571,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                       <button
                         onClick={() => handleAssignCharacter(undefined, p.participantId)}
                         className="text-sm transition-opacity hover:opacity-75"
-                        style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}
+                        style={{ 
+                          color: visualTokens.accentColor || visualTokens.primaryColor,
+                          cursor: 'pointer',
+                        }}
                       >
                         Assign Character
                       </button>
@@ -569,6 +599,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                         style={{
                           backgroundColor: visualTokens.primaryColor,
                           color: visualTokens.bgColor,
+                          cursor: 'pointer',
+                          pointerEvents: 'auto',
+                          minHeight: '44px',
+                          minWidth: '44px',
                         }}
                       >
                         Approve
@@ -582,6 +616,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                           borderColor: visualTokens.primaryColor,
                           borderWidth: '1px',
                           borderStyle: 'solid',
+                          cursor: 'pointer',
+                          pointerEvents: 'auto',
+                          minHeight: '44px',
+                          minWidth: '44px',
                         }}
                       >
                         Suggest Different
@@ -618,7 +656,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                   <button
                     onClick={() => setSelectedCharacterForDossier(character)}
                     className="text-sm underline transition-opacity hover:opacity-75 cursor-pointer"
-                    style={{ color: visualTokens.primaryColor }}
+                    style={{ 
+                      color: visualTokens.primaryColor,
+                      pointerEvents: 'auto',
+                    }}
                   >
                     View Dossier
                   </button>
@@ -626,7 +667,11 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                     <button
                       onClick={() => handleAssignCharacter(character.id)}
                       className="text-sm transition-opacity hover:opacity-75"
-                      style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}
+                      style={{ 
+                        color: visualTokens.accentColor || visualTokens.primaryColor,
+                        cursor: 'pointer',
+                        pointerEvents: 'auto',
+                      }}
                     >
                       Assign
                     </button>
@@ -656,6 +701,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                   backgroundColor: visualTokens.accentColor || visualTokens.primaryColor,
                   color: visualTokens.bgColor,
                   opacity: 0.8,
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
+                  minHeight: '44px',
+                  minWidth: '44px',
                 }}
               >
                 Preview Script
@@ -670,6 +719,10 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
               style={{
                 backgroundColor: visualTokens.primaryColor,
                 color: visualTokens.bgColor,
+                cursor: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2) ? 'not-allowed' : 'pointer',
+                pointerEvents: (!partyKitInitialized || connectionStatus !== 'connected' || participants.length < 2) ? 'none' : 'auto',
+                minHeight: '44px',
+                minWidth: '44px',
               }}
             >
               {getButtonLabel('startPerformance')}

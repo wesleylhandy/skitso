@@ -1,11 +1,15 @@
 /**
  * Image Download Proxy Route
- * 
+ *
  * Proxies image downloads to avoid CORS issues when downloading external images.
  * Fetches the image server-side and returns it with proper headers for download.
+ *
+ * For Cloudinary URLs (stored as WebP), we request a PNG variant so the download
+ * is a widely compatible format and matches the .png filename used by the UI.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { toCloudinaryFormatUrl } from '@/src/lib/cloudinary/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,8 +34,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch the image
-    const imageResponse = await fetch(imageUrl);
+    // For Cloudinary: request PNG so download matches .png filename and is widely compatible
+    const fetchUrl =
+      toCloudinaryFormatUrl(imageUrl, 'png') ?? imageUrl;
+    const isCloudinaryPng = fetchUrl !== imageUrl;
+
+    const imageResponse = await fetch(fetchUrl);
 
     if (!imageResponse.ok) {
       return NextResponse.json(
@@ -40,13 +48,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get the image blob
     const imageBlob = await imageResponse.blob();
+    const contentType = isCloudinaryPng ? 'image/png' : (imageBlob.type || 'image/png');
 
-    // Return the image with download headers
     return new NextResponse(imageBlob, {
       headers: {
-        'Content-Type': imageBlob.type || 'image/png',
+        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': imageBlob.size.toString(),
       },

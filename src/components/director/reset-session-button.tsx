@@ -111,6 +111,9 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
         style={{
           ...style,
           fontFamily: visualTokens.headerFont,
+          cursor: 'pointer',
+          minHeight: '44px',
+          minWidth: '44px',
         }}
       >
         Start New Session

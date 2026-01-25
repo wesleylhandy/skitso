@@ -11,6 +11,7 @@ const mockCharacter: Character = {
   id: 'char-1',
   sessionId: 'session-1',
   participantId: 'participant-1',
+  isLocked: false,
   name: 'Test Character',
   archetypeLabel: 'The Hero',
   personalityTraits: ['brave', 'kind'],

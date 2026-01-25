@@ -49,6 +49,7 @@ export function BackButton({ to, label, className }: BackButtonProps) {
     fontSize: '1rem',
     fontWeight: '600',
     cursor: 'pointer',
+    pointerEvents: 'auto',
     transition: `all ${interactionPatterns.animationSpeed}ms ease`,
     outline: 'none',
     display: 'inline-flex',

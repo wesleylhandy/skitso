@@ -33,22 +33,42 @@ let storedCallback: ((data: {
 
 vi.mock('@/src/lib/partykit/client', () => ({
   initializePartyKitClient: vi.fn(),
-  onPerformanceProgress: vi.fn((callback: (data: {
-    sessionId: string;
-    progress: {
-      currentLineIndex: number;
-      currentScene: number;
-      startedAt: number | null;
-      pausedAt: number | null;
-      completedLines: number[];
-    };
-    timestamp: number;
-  }) => void) => {
-    storedCallback = callback;
-    return mockUnsubscribe;
-  }),
+  onPerformanceProgress: vi.fn(
+    (
+      callback: (data: {
+        sessionId: string;
+        progress: {
+          currentLineIndex: number;
+          currentScene: number;
+          startedAt: number | null;
+          pausedAt: number | null;
+          completedLines: number[];
+        };
+        timestamp: number;
+      }) => void,
+    ) => {
+      storedCallback = callback;
+      return mockUnsubscribe;
+    },
+  ),
   advancePerformance: vi.fn(),
   getConnectionStatus: vi.fn(() => 'connected'),
+  onConnectionStatusChange: vi.fn((cb: (status: 'connected') => void) => {
+    cb('connected');
+    return mockUnsubscribe;
+  }),
+  updateSessionState: vi.fn(),
+}));
+
+// Mock Next.js app router
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+  }),
 }));
 
 // Mock useVibe hook
@@ -137,6 +157,8 @@ describe('Teleprompter Component', () => {
     role: 'director',
     name: 'Director',
     characterAssignment: null,
+    assignmentStatus: 'none',
+    requestedCharacterId: null,
     connectionStatus: 'connected',
     joinedAt: Date.now(),
     deviceInfo: {
@@ -155,6 +177,7 @@ describe('Teleprompter Component', () => {
       id: 'char-1',
       sessionId: TEST_SESSION_CODE,
       participantId: 'actor-1',
+      isLocked: false,
       name: 'Character A',
       archetypeLabel: 'The Main Character',
       personalityTraits: ['funny', 'brave'],
@@ -165,6 +188,8 @@ describe('Teleprompter Component', () => {
       },
       dialogueLines: [0, 2],
     },
+    assignmentStatus: 'none',
+    requestedCharacterId: null,
     connectionStatus: 'connected',
     joinedAt: Date.now(),
     deviceInfo: {
@@ -504,6 +529,125 @@ describe('Teleprompter Component', () => {
         expect(progress.advancementControl.directorOverride).toBe(true);
         expect(progress.advancementControl.lastAdvancedBy).toBe(mockDirector.id);
       });
+    });
+  });
+
+  describe('T193: Performance Duration Warning', () => {
+    it('should not show duration warning when performance has not started', async () => {
+      store.set(performanceProgressAtom, {
+        ...initialProgress,
+        startedAt: null,
+      });
+      // Use director to see the warning in the header
+      store.set(participantAtom, mockDirector);
+
+      render(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
+
+      // Wait for component to render (check for script title which is always visible)
+      await waitFor(() => {
+        expect(screen.getByText('Test Script')).toBeInTheDocument();
+      });
+
+      // Should not show the duration warning message
+      expect(
+        screen.queryByText(/This performance has run longer than expected/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it('should show duration warning when performance exceeds 10 minutes', async () => {
+      const startTime = Date.now() - 11 * 60 * 1000; // 11 minutes ago (exceeds 10 min threshold)
+      
+      store.set(performanceProgressAtom, {
+        ...initialProgress,
+        startedAt: startTime,
+      });
+      // Use director to see the warning in the header
+      store.set(participantAtom, mockDirector);
+
+      render(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
+
+      // Wait for component to render
+      await waitFor(() => {
+        expect(screen.getByText('Test Script')).toBeInTheDocument();
+      });
+
+      // Wait for the duration check to run (component checks immediately on mount)
+      await waitFor(() => {
+        expect(
+          screen.getByText(/This performance has run longer than expected/i)
+        ).toBeInTheDocument();
+      }, { timeout: 2000 });
+    });
+
+    it('should not show duration warning when performance is under 10 minutes', async () => {
+      const startTime = Date.now() - 5 * 60 * 1000; // 5 minutes ago (under threshold)
+      
+      store.set(performanceProgressAtom, {
+        ...initialProgress,
+        startedAt: startTime,
+      });
+      // Use director to see the warning in the header
+      store.set(participantAtom, mockDirector);
+
+      render(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
+
+      // Wait for component to render
+      await waitFor(() => {
+        expect(screen.getByText('Test Script')).toBeInTheDocument();
+      });
+
+      // Wait a bit to ensure duration check has run
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should not show the warning
+      expect(
+        screen.queryByText(/This performance has run longer than expected/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it('should reset duration warning when performance stops (startedAt becomes null)', async () => {
+      const startTime = Date.now() - 15 * 60 * 1000; // 15 minutes ago
+      
+      // Start with a performance that has exceeded duration
+      store.set(performanceProgressAtom, {
+        ...initialProgress,
+        startedAt: startTime,
+      });
+      // Use director to see the warning in the header
+      store.set(participantAtom, mockDirector);
+
+      const { rerender } = render(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
+
+      // Wait for component to render
+      await waitFor(() => {
+        expect(screen.getByText('Test Script')).toBeInTheDocument();
+      });
+
+      // Wait for warning to appear
+      await waitFor(() => {
+        expect(
+          screen.getByText(/This performance has run longer than expected/i)
+        ).toBeInTheDocument();
+      }, { timeout: 2000 });
+
+      // Now stop the performance (set startedAt to null)
+      store.set(performanceProgressAtom, {
+        ...initialProgress,
+        startedAt: null,
+      });
+
+      // Force re-render to trigger effect
+      rerender(<Teleprompter sessionCode={TEST_SESSION_CODE} />);
+
+      // Wait for deferred state update (setTimeout with 0 delay)
+      await waitFor(
+        () => {
+          expect(
+            screen.queryByText(/This performance has run longer than expected/i)
+          ).not.toBeInTheDocument();
+        },
+        { timeout: 500 }
+      );
     });
   });
 });

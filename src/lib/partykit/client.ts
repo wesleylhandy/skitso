@@ -60,6 +60,89 @@ function getPartyKitHost(): string {
 }
 
 /**
+ * Get image URL for a character from PartyKit HTTP endpoint
+ * Images are served via HTTP to avoid WebSocket message size limits
+ */
+/** Relative PartyKit image path. Use when sending cast to server to avoid redirect loops. */
+function getCharacterImageRelativeUrl(sessionId: string, characterId: string): string {
+  return `/parties/main/${sessionId}/image/${characterId}`;
+}
+
+/** True if URL is a Cloudinary delivery URL. We keep these in cast and skip PartyKit storage. */
+export function isCloudinaryUrl(url: string): boolean {
+  return url.includes('res.cloudinary.com');
+}
+
+export function getCharacterImageUrl(sessionId: string, characterId: string): string {
+  const host = getPartyKitHost();
+  if (!host) {
+    return '';
+  }
+  return `${host}${getCharacterImageRelativeUrl(sessionId, characterId)}`;
+}
+
+/**
+ * Convert a relative PartyKit image URL to a full URL
+ * Handles URLs like /parties/main/{sessionId}/image/{characterId}
+ * Returns the URL as-is if it's already a full URL (http/https) or data URL
+ */
+export function normalizeImageUrl(imageUrl: string | undefined, sessionId: string, characterId: string): string {
+  if (!imageUrl || imageUrl.length === 0) {
+    return getCharacterImageUrl(sessionId, characterId);
+  }
+  
+  // If already a full URL (http/https) or data URL, return as-is
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('data:')) {
+    return imageUrl;
+  }
+  
+  // If it's a relative PartyKit URL, convert to full URL
+  if (imageUrl.startsWith('/parties/main/')) {
+    const host = getPartyKitHost();
+    if (host) {
+      return `${host}${imageUrl}`;
+    }
+  }
+  
+  // Fallback: construct URL from sessionId and characterId
+  return getCharacterImageUrl(sessionId, characterId);
+}
+
+/** Shape of GET /state response (used after minimal state:recovered) */
+export interface SessionStateResponse {
+  sessionId: string;
+  vibeContext: VibeType;
+  status: SessionStatus | 'expired';
+  vibeLockedAt: number | null;
+  participants: unknown[];
+  cast: Character[];
+  script: Script | null;
+  wrapPartyData: WrapPartyData | null;
+  expiresAt: number;
+  isExpired: boolean;
+  timeUntilExpiration: number;
+}
+
+/**
+ * Fetch full session state via HTTP (GET /state).
+ * Use after receiving minimal state:recovered over WebSocket to stay under message size limits.
+ * Returns null on 404/410; throws on network error.
+ */
+export async function fetchSessionState(sessionId: string): Promise<SessionStateResponse | null> {
+  const host = getPartyKitHost();
+  if (!host) return null;
+  const url = `${host}/parties/main/${sessionId}/state`;
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new TypeError('Network error');
+  }
+  if (!res.ok) return null;
+  return (await res.json()) as SessionStateResponse;
+}
+
+/**
  * Calculate exponential backoff delay
  */
 function calculateBackoffDelay(attempt: number): number {
@@ -82,27 +165,57 @@ export function initializePartyKitClient(room: string): PartySocket {
   const host = getPartyKitHost();
 
   if (!host) {
-    throw new Error('Cannot initialize PartyKit client: host not available');
+    const error = new Error('Cannot initialize PartyKit client: host not available');
+    console.error('[PartyKit] Initialization failed:', error.message);
+    throw error;
   }
 
-  // Close existing connection if different room
+  // Close existing connection if different room (1000 = normal closure, skip reconnect)
   if (partySocket && partySocket.room !== room) {
-    partySocket.close();
+    console.log('[PartyKit] Closing existing connection for different room', {
+      oldRoom: partySocket.room,
+      newRoom: room,
+    });
+    partySocket.close(1000, 'Switching room');
   }
 
   // Initialize connection
   connectionStatus = 'connecting';
   triggerEvent('connection:status', connectionStatus);
   
-  partySocket = new PartySocket({
+  // Log connection attempt for debugging
+  console.log('[PartyKit] Initializing connection', {
     host,
     room,
-    party: 'main', // Party name from partykit.json (main is the default)
+    party: 'main',
+    environment: process.env.NODE_ENV,
   });
+  
+  try {
+    partySocket = new PartySocket({
+      host,
+      room,
+      party: 'main', // Party name from partykit.json (main is the default)
+    });
+    console.log('[PartyKit] PartySocket created', {
+      readyState: partySocket.readyState,
+      room: partySocket.room,
+    });
+  } catch (error) {
+    console.error('[PartyKit] Failed to create PartySocket:', error);
+    connectionStatus = 'disconnected';
+    triggerEvent('connection:status', connectionStatus);
+    throw error;
+  }
 
   // Set up event listeners
   partySocket.addEventListener('open', () => {
-    console.log('PartyKit connected:', partySocket?.id);
+    console.log('[PartyKit] Connection opened successfully', {
+      id: partySocket?.id,
+      room: partySocket?.room,
+      host: getPartyKitHost(),
+      readyState: partySocket?.readyState,
+    });
     const wasReconnecting = isReconnecting;
     connectionStatus = 'connected';
     reconnectAttempts = 0;
@@ -132,17 +245,33 @@ export function initializePartyKitClient(room: string): PartySocket {
     
     // If this was a reconnection, replay queued messages and request state recovery
     if (wasReconnecting && partySocket) {
-      console.log('Reconnection detected, replaying queued messages and requesting state recovery');
+      console.log('[PartyKit] Reconnection detected, replaying queued messages', {
+        queueSize: messageQueue.length,
+        room: partySocket.room,
+      });
       
       // Replay queued messages
+      let replayedCount = 0;
       while (messageQueue.length > 0 && partySocket.readyState === WebSocket.OPEN) {
         const queued = messageQueue.shift();
         if (queued) {
           try {
             partySocket.send(queued.message);
-            console.log('Replayed queued message');
+            replayedCount++;
+            // Log important message types
+            try {
+              const parsed = JSON.parse(queued.message);
+              if (parsed.type === 'cast:update' || parsed.type === 'script:update') {
+                console.log('[PartyKit] Replayed important message:', {
+                  type: parsed.type,
+                  sessionId: parsed.data?.sessionId,
+                });
+              }
+            } catch {
+              // Ignore parse errors
+            }
           } catch (error) {
-            console.error('Failed to replay queued message:', error);
+            console.error('[PartyKit] Failed to replay queued message:', error);
             // Re-queue if retries not exhausted
             if (queued.retries < MAX_MESSAGE_RETRIES) {
               queued.retries++;
@@ -152,27 +281,123 @@ export function initializePartyKitClient(room: string): PartySocket {
         }
       }
       
+      console.log('[PartyKit] Replayed messages:', {
+        count: replayedCount,
+        remainingInQueue: messageQueue.length,
+      });
+      
       // Request state recovery after reconnection
       if (partySocket.room) {
         triggerEvent('reconnect', { sessionId: partySocket.room });
       }
     }
+    
+    // ALWAYS replay queued messages on open, not just on reconnection
+    // This handles cases where connection was closed and messages were queued
+    if (partySocket && partySocket.readyState === WebSocket.OPEN && messageQueue.length > 0) {
+      console.log('[PartyKit] Connection opened with queued messages, replaying:', {
+        queueSize: messageQueue.length,
+        room: partySocket.room,
+      });
+      
+      let replayedCount = 0;
+      while (messageQueue.length > 0 && partySocket.readyState === WebSocket.OPEN) {
+        const queued = messageQueue.shift();
+        if (queued) {
+          try {
+            partySocket.send(queued.message);
+            replayedCount++;
+            // Log important message types
+            try {
+              const parsed = JSON.parse(queued.message);
+              if (parsed.type === 'cast:update' || parsed.type === 'script:update') {
+                console.log('[PartyKit] Replayed important message on open:', {
+                  type: parsed.type,
+                  sessionId: parsed.data?.sessionId,
+                });
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          } catch (error) {
+            console.error('[PartyKit] Failed to replay queued message on open:', error);
+            // Re-queue if retries not exhausted
+            if (queued.retries < MAX_MESSAGE_RETRIES) {
+              queued.retries++;
+              messageQueue.push(queued);
+            }
+          }
+        }
+      }
+      
+      console.log('[PartyKit] Replayed messages on open:', {
+        count: replayedCount,
+        remainingInQueue: messageQueue.length,
+      });
+    }
   });
 
   partySocket.addEventListener('close', (event: CloseEvent) => {
-    console.log('PartyKit disconnected:', event.code, event.reason);
+    console.log('[PartyKit] Connection closed', {
+      code: event.code,
+      reason: event.reason || 'No reason provided',
+      wasClean: event.wasClean,
+      host: getPartyKitHost(),
+      room: partySocket?.room,
+    });
+    stopHeartbeat();
+    if (event.code === 1000) {
+      return;
+    }
     connectionStatus = 'disconnected';
     triggerEvent('connection:status', connectionStatus);
-    stopHeartbeat();
     handleDisconnection(event.code);
   });
 
   partySocket.addEventListener('error', (error: Event) => {
     // Error events don't always have detailed information
-    const errorInfo = error instanceof ErrorEvent 
-      ? { message: error.message, filename: error.filename, lineno: error.lineno, colno: error.colno }
-      : { type: error.type, target: error.target };
+    const errorInfo: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      host: getPartyKitHost(),
+      room: partySocket?.room || 'unknown',
+    };
+    
+    if (error instanceof ErrorEvent) {
+      errorInfo.message = error.message || 'Unknown error';
+      errorInfo.filename = error.filename || 'unknown';
+      errorInfo.lineno = error.lineno || 0;
+      errorInfo.colno = error.colno || 0;
+    } else {
+      errorInfo.type = error.type || 'error';
+      errorInfo.target = error.target ? String(error.target) : 'unknown';
+      // Try to extract more info from the error object
+      if (error instanceof Error) {
+        errorInfo.message = error.message;
+        errorInfo.name = error.name;
+        errorInfo.stack = error.stack;
+      }
+    }
+    
+    // Always log with context, even if error details are minimal
     console.error('PartyKit connection error:', errorInfo);
+    
+    // Provide helpful diagnostic message
+    const host = getPartyKitHost();
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      console.warn(
+        'PartyKit connection failed. Make sure PartyKit dev server is running:\n' +
+        '  Run: npm run dev:partykit\n' +
+        '  Or: npm run dev:all (runs both Next.js and PartyKit)\n' +
+        `  Expected host: ${host}`
+      );
+    } else {
+      console.warn(
+        `PartyKit connection failed to ${host}.\n` +
+        '  Check that NEXT_PUBLIC_PARTYKIT_HOST is set correctly.\n' +
+        '  Verify the PartyKit server is deployed and accessible.'
+      );
+    }
+    
     handleConnectionError();
   });
 
@@ -258,9 +483,39 @@ export function isPartyKitConnected(): boolean {
 
 /**
  * Get connection status
+ * Checks actual WebSocket state to ensure accuracy and consistency
  */
 export function getConnectionStatus(): ConnectionStatus {
-  return connectionStatus;
+  // If we have a socket, check its actual state for accuracy
+  if (partySocket) {
+    if (partySocket.readyState === WebSocket.OPEN) {
+      // WebSocket is open - we're definitely connected
+      if (connectionStatus !== 'connected') {
+        connectionStatus = 'connected';
+      }
+      return 'connected';
+    } else if (partySocket.readyState === WebSocket.CONNECTING) {
+      // WebSocket is connecting
+      // Preserve 'reconnecting' status if that's what we were doing, otherwise use 'connecting'
+      if (connectionStatus !== 'reconnecting' && connectionStatus !== 'connecting') {
+        connectionStatus = 'connecting';
+      }
+      return connectionStatus === 'reconnecting' ? 'reconnecting' : 'connecting';
+    } else {
+      // CLOSED or CLOSING - we're disconnected
+      // Only update cached status if we thought we were connected/connecting
+      // Preserve 'reconnecting' state briefly (reconnection logic will handle transition)
+      if (connectionStatus === 'connected' || connectionStatus === 'connecting') {
+        connectionStatus = 'disconnected';
+      }
+      return connectionStatus;
+    }
+  }
+  // No socket means disconnected
+  if (connectionStatus !== 'disconnected') {
+    connectionStatus = 'disconnected';
+  }
+  return 'disconnected';
 }
 
 /**
@@ -349,11 +604,36 @@ function sendMessageWithQueue(message: string): void {
   if (partySocket && partySocket.readyState === WebSocket.OPEN) {
     try {
       partySocket.send(message);
+      // Log successful send for debugging
+      try {
+        const parsed = JSON.parse(message);
+        if (parsed.type === 'cast:update' || parsed.type === 'script:update') {
+          console.log('[PartyKit] Message sent successfully:', {
+            type: parsed.type,
+            sessionId: parsed.data?.sessionId,
+            readyState: partySocket.readyState,
+          });
+        }
+      } catch {
+        // Ignore parse errors for logging
+      }
     } catch (error) {
-      console.error('Failed to send message, queuing:', error);
+      console.error('[PartyKit] Failed to send message, queuing:', error);
       queueMessage(message);
     }
   } else {
+    console.warn('[PartyKit] Connection not open, queuing message:', {
+      readyState: partySocket?.readyState,
+      hasSocket: !!partySocket,
+      messageType: (() => {
+        try {
+          const parsed = JSON.parse(message);
+          return parsed.type;
+        } catch {
+          return 'unknown';
+        }
+      })(),
+    });
     queueMessage(message);
   }
 }
@@ -431,6 +711,66 @@ export function joinSession(
   }
 }
 
+const JOIN_WAIT_TIMEOUT_MS = 8000;
+
+/**
+ * Join a session room and wait for session:joined.
+ * Used by directors so they are registered before sending director-only PartyKit messages.
+ */
+export function joinSessionAndWait(
+  sessionId: string,
+  participantId: string,
+  options?: { role?: 'director' | 'actor'; vibeContext?: VibeType; name?: string }
+): Promise<void> {
+  initializePartyKitClient(sessionId);
+  const socket = partySocket;
+
+  if (!socket) {
+    return Promise.reject(new Error('Failed to initialize PartyKit client'));
+  }
+
+  const joinData = {
+    sessionId,
+    participantId,
+    ...(options?.role && { role: options.role }),
+    ...(options?.vibeContext && { vibeContext: options.vibeContext }),
+    ...(options?.name && { name: options.name }),
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unsubscribe();
+      reject(new Error('joinSessionAndWait: timed out waiting for session:joined'));
+    }, JOIN_WAIT_TIMEOUT_MS);
+
+    const unsubscribe = onSessionJoined((data) => {
+      if (data.sessionId !== sessionId) return;
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      unsubscribe();
+      resolve();
+    });
+
+    const sendJoin = () => {
+      sendMessageWithQueue(JSON.stringify({
+        type: 'session:join',
+        data: joinData,
+      }));
+    };
+
+    if (socket.readyState === WebSocket.OPEN) {
+      sendJoin();
+    } else {
+      socket.addEventListener('open', () => sendJoin(), { once: true });
+    }
+  });
+}
+
 /**
  * Leave a session room
  */
@@ -498,9 +838,32 @@ export function onScriptUpdate(
  */
 export function updateScript(sessionId: string, script: Script): void {
   if (!partySocket) {
-    console.warn('PartyKit not initialized, cannot update script');
+    console.warn('[PartyKit] Not initialized, cannot update script', {
+      sessionId,
+      scriptTitle: script.title,
+    });
     return;
   }
+
+  // Check connection state
+  const isConnected = partySocket.readyState === WebSocket.OPEN;
+  if (!isConnected) {
+    console.warn('[PartyKit] Connection not open, queueing script update', {
+      sessionId,
+      scriptTitle: script.title,
+      readyState: partySocket.readyState,
+      room: partySocket.room,
+    });
+    // Will be queued by sendMessageWithQueue
+  }
+
+  console.log('[PartyKit] Sending script update:', {
+    sessionId,
+    scriptTitle: script.title,
+    isConnected,
+    readyState: partySocket.readyState,
+    room: partySocket.room,
+  });
 
   sendMessageWithQueue(JSON.stringify({
     type: 'script:update',
@@ -535,36 +898,350 @@ export function onCastUpdate(
   };
 }
 
+/** PartyKit storage value limit (128 KiB). Larger data URLs cannot be stored. */
+const PARTYKIT_IMAGE_STORAGE_LIMIT_BYTES = 128 * 1024;
+
 /**
- * Emit cast update
+ * Store character image data URL via HTTP POST to PartyKit
+ * This is the ONLY way to store images - WebSocket has 576-byte limit, images are 2MB+
+ * Data URLs larger than 128 KiB exceed PartyKit storage limit and are skipped.
  */
-export function updateCast(sessionId: string, cast: Character[]): void {
-  if (!partySocket) {
-    console.warn('PartyKit not initialized, cannot update cast');
+async function storeCharacterImageViaHttp(
+  sessionId: string,
+  characterId: string,
+  imageUrl: string
+): Promise<void> {
+  const host = getPartyKitHost();
+  if (!host) {
+    console.warn('[PartyKit] Cannot store image via HTTP - host not available');
     return;
   }
 
-  sendMessageWithQueue(JSON.stringify({
+  if (imageUrl.length > PARTYKIT_IMAGE_STORAGE_LIMIT_BYTES) {
+    console.warn('[PartyKit] Skipping image store (exceeds 128 KiB limit):', {
+      sessionId,
+      characterId,
+      length: imageUrl.length,
+      limit: PARTYKIT_IMAGE_STORAGE_LIMIT_BYTES,
+    });
+    return;
+  }
+
+  try {
+    const response = await fetch(`${host}/parties/main/${sessionId}/image/${characterId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageUrl, // Data URL or external HTTP URL
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[PartyKit] Failed to store image via HTTP POST:', {
+        sessionId,
+        characterId,
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+      });
+      throw new Error(`Failed to store image: ${response.status} ${response.statusText}`);
+    }
+
+    console.log('[PartyKit] Image stored via HTTP POST:', {
+      sessionId,
+      characterId,
+      imageUrlLength: imageUrl.length,
+      imageUrlType: imageUrl.startsWith('data:') ? 'data-url' : imageUrl.startsWith('http') ? 'http-url' : 'unknown',
+    });
+  } catch (error) {
+    console.error('[PartyKit] Error storing image via HTTP POST:', {
+      sessionId,
+      characterId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error; // Re-throw so caller knows it failed
+  }
+}
+
+/**
+ * Create a minimal character object for WebSocket transmission.
+ * Includes name, archetypeLabel, personalityTraits so UI can display them.
+ * Server merges with existing cast; we omit imagePrompt/hiddenMotivation to save size.
+ */
+function createMinimalCharacter(char: Character): Character {
+  return {
+    id: char.id,
+    sessionId: char.sessionId,
+    participantId: char.participantId,
+    isLocked: char.isLocked,
+    name: char.name || '',
+    archetypeLabel: char.archetypeLabel || '',
+    personalityTraits: Array.isArray(char.personalityTraits) ? char.personalityTraits : [],
+    hiddenMotivation: '', // Omit to save size; server preserves from existing
+    visualRepresentation: {
+      imageUrl: char.visualRepresentation?.imageUrl || '',
+      imagePrompt: '', // Omit to save size; server preserves from existing
+    },
+    dialogueLines: [],
+    attributes: char.attributes,
+  };
+}
+
+/**
+ * Convert data URLs in cast to HTTP endpoint URLs to avoid WebSocket message size limits
+ * This must happen on the client BEFORE sending to PartyKit
+ * Also stores data URLs via HTTP POST (not WebSocket - images are 2MB+)
+ * Creates minimal character objects to reduce message size
+ */
+function convertCastDataUrlsToHttp(sessionId: string, cast: Character[]): {
+  castForWebSocket: Character[];
+  imageStoragePromises: Promise<void>[];
+} {
+  const imageStoragePromises: Promise<void>[] = [];
+  const castForWebSocket = cast.map((char) => {
+    const imageUrl = char.visualRepresentation?.imageUrl;
+    
+    // Create minimal character (removes large fields)
+    const minimalChar = createMinimalCharacter(char);
+    
+    // If it's a data URL or external HTTP URL, store via HTTP POST and convert to endpoint URL
+    // Exception: Cloudinary URLs stay as-is; we use them directly (no PartyKit storage).
+    if (imageUrl && (imageUrl.startsWith('data:') || (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')))) {
+      // Never POST our own PartyKit image URL (causes redirect loop)
+      const isOwn =
+        imageUrl.startsWith('/parties/main/') ||
+        (imageUrl.includes('/parties/main/') && imageUrl.includes('/image/'));
+      if (isOwn) {
+        return {
+          ...minimalChar,
+          visualRepresentation: {
+            ...minimalChar.visualRepresentation,
+            imageUrl: getCharacterImageRelativeUrl(sessionId, char.id),
+          },
+        };
+      }
+      // Keep Cloudinary URLs in cast; Director desk and Join page use them directly.
+      if (isCloudinaryUrl(imageUrl)) {
+        return {
+          ...minimalChar,
+          visualRepresentation: {
+            ...minimalChar.visualRepresentation,
+            imageUrl,
+          },
+        };
+      }
+      // Data URL or other HTTP URL: store via PartyKit, use endpoint URL in cast
+      imageStoragePromises.push(
+        storeCharacterImageViaHttp(sessionId, char.id, imageUrl).catch((error) => {
+          console.error('[PartyKit] Failed to store image, will retry on cast update:', {
+            sessionId,
+            characterId: char.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+      );
+      return {
+        ...minimalChar,
+        visualRepresentation: {
+          ...minimalChar.visualRepresentation,
+          imageUrl: getCharacterImageRelativeUrl(sessionId, char.id),
+        },
+      };
+    }
+
+    // Already endpoint URL or empty: always send relative URL so server never stores full URL
+    return {
+      ...minimalChar,
+      visualRepresentation: {
+        ...minimalChar.visualRepresentation,
+        imageUrl:
+          imageUrl && (imageUrl.startsWith('/parties/main/') || (imageUrl.includes('/parties/main/') && imageUrl.includes('/image/')))
+            ? getCharacterImageRelativeUrl(sessionId, char.id)
+            : minimalChar.visualRepresentation?.imageUrl || '',
+      },
+    };
+  });
+
+  return { castForWebSocket, imageStoragePromises };
+}
+
+/**
+ * Emit cast update
+ * CRITICAL: Converts data URLs to HTTP endpoint URLs before sending to avoid WebSocket size limits
+ */
+export function updateCast(sessionId: string, cast: Character[]): void {
+  if (!partySocket) {
+    console.warn('[PartyKit] Not initialized, cannot update cast', {
+      sessionId,
+      castLength: cast.length,
+    });
+    return;
+  }
+
+  // CRITICAL: Convert data URLs to HTTP endpoint URLs BEFORE sending
+  // This prevents WebSocket message size limit errors (576 bytes max)
+  // Data URLs are 2MB+, but HTTP endpoint URLs are only ~50 bytes
+  const { castForWebSocket, imageStoragePromises } = convertCastDataUrlsToHttp(sessionId, cast);
+
+  // Store images via HTTP POST in the background (non-blocking)
+  // This ensures images are stored even though we send endpoint URLs in the main cast update
+  // Images are stored asynchronously - cast update can proceed even if some images fail
+  Promise.allSettled(imageStoragePromises).then((results) => {
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.warn('[PartyKit] Some images failed to store via HTTP POST:', {
+        sessionId,
+        failedCount: failed.length,
+        totalCount: imageStoragePromises.length,
+      });
+    } else {
+      console.log('[PartyKit] All images stored via HTTP POST:', {
+        sessionId,
+        totalCount: imageStoragePromises.length,
+      });
+    }
+  });
+
+  const charactersWithImages = cast.filter(
+    (c) => c.visualRepresentation?.imageUrl && c.visualRepresentation.imageUrl.length > 0
+  );
+  const charactersWithDataUrls = cast.filter(
+    (c) => c.visualRepresentation?.imageUrl?.startsWith('data:')
+  );
+  const isConnected = partySocket.readyState === WebSocket.OPEN;
+
+  // Calculate message size and split into chunks if too large
+  const fullMessage = JSON.stringify({
     type: 'cast:update',
     data: {
       sessionId,
-      cast,
+      cast: castForWebSocket,
     },
-  }));
+  });
+  const messageSize = new Blob([fullMessage]).size;
+  const maxMessageSize = 500; // Leave some buffer below 576 byte limit
+
+  console.log('[PartyKit] updateCast:', {
+    sessionId,
+    castLength: cast.length,
+    charactersWithImages: charactersWithImages.length,
+    charactersWithDataUrls: charactersWithDataUrls.length,
+    messageSizeBytes: messageSize,
+    messageSizeKiB: (messageSize / 1024).toFixed(2),
+    isConnected,
+    readyState: partySocket.readyState,
+    room: partySocket.room,
+    imageUrlTypes: charactersWithImages.map((c) => ({
+      characterId: c.id,
+      characterName: c.name,
+      imageUrlType: c.visualRepresentation?.imageUrl?.startsWith('data:')
+        ? 'data-url'
+        : c.visualRepresentation?.imageUrl?.startsWith('http')
+          ? 'http-url'
+          : 'none',
+      imageUrlLength: c.visualRepresentation?.imageUrl?.length || 0,
+      imageUrlPrefix: c.visualRepresentation?.imageUrl?.substring(0, 50) || 'N/A',
+    })),
+  });
+
+  // If message is too large, split into smaller chunks
+  if (messageSize > maxMessageSize) {
+    console.warn('[PartyKit] Message too large, splitting into chunks:', {
+      sessionId,
+      messageSizeBytes: messageSize,
+      maxMessageSize,
+      castLength: castForWebSocket.length,
+    });
+
+    // Send cast in chunks of 1 character at a time
+    castForWebSocket.forEach((char, index) => {
+      // Minimal message: id, p, l, i, plus n/a/t so new characters have name and traits
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const minimalChar: any = {
+        id: char.id,
+        p: char.participantId,
+        l: char.isLocked,
+        i: char.visualRepresentation?.imageUrl || '',
+        n: char.name || undefined,
+        a: char.archetypeLabel || undefined,
+        t: Array.isArray(char.personalityTraits) && char.personalityTraits.length > 0 ? char.personalityTraits : undefined,
+      };
+      
+      if (minimalChar.p === null || minimalChar.p === undefined) delete minimalChar.p;
+      if (minimalChar.l === false) delete minimalChar.l;
+      if (!minimalChar.i || minimalChar.i.length === 0) delete minimalChar.i;
+      if (!minimalChar.n) delete minimalChar.n;
+      if (!minimalChar.a) delete minimalChar.a;
+      if (!minimalChar.t || minimalChar.t.length === 0) delete minimalChar.t;
+      
+      const chunkMessage = JSON.stringify({
+        type: 'cast:update',
+        data: {
+          sessionId,
+          cast: [minimalChar], // Send one character at a time with minimal fields
+        },
+      });
+      const chunkSize = new Blob([chunkMessage]).size;
+      
+      if (chunkSize > maxMessageSize) {
+        console.error('[PartyKit] Single character still too large even with minimal fields:', {
+          sessionId,
+          characterId: char.id,
+          chunkSizeBytes: chunkSize,
+          characterFields: Object.keys(minimalChar),
+        });
+        // Still try to send - might work if limit is slightly flexible
+      }
+      
+      // Send with a small delay to avoid overwhelming the connection
+      setTimeout(() => {
+        sendMessageWithQueue(chunkMessage);
+      }, index * 10); // 10ms delay between chunks
+    });
+  } else {
+    // Message is small enough, send normally
+    if (!isConnected) {
+      console.warn('[PartyKit] Connection not open, queueing cast update', {
+        sessionId,
+        castLength: cast.length,
+        readyState: partySocket.readyState,
+        room: partySocket.room,
+      });
+    }
+
+    sendMessageWithQueue(fullMessage);
+  }
 }
 
 /**
  * Listen for session state updates
  */
 export function onSessionStateUpdate(
-  callback: (data: { sessionId: string; status: SessionStatus; timestamp: number }) => void
+  callback: (data: {
+    sessionId: string;
+    status: SessionStatus;
+    timestamp: number;
+    vibeContext?: VibeType;
+    vibeLockedAt?: number | null;
+  }) => void
 ): () => void {
   if (!eventListeners.has('session:state:updated')) {
     eventListeners.set('session:state:updated', new Set());
   }
 
   const wrappedCallback: EventCallback = (data: unknown) => {
-    callback(data as { sessionId: string; status: SessionStatus; timestamp: number });
+    callback(
+      data as {
+        sessionId: string;
+        status: SessionStatus;
+        timestamp: number;
+        vibeContext?: VibeType;
+        vibeLockedAt?: number | null;
+      }
+    );
   };
   eventListeners.get('session:state:updated')!.add(wrappedCallback);
 
@@ -593,6 +1270,60 @@ export function updateSessionState(sessionId: string, status: SessionStatus): vo
       status,
     },
   }));
+}
+
+/**
+ * Listen for generation progress (Director → Join page).
+ * Optional: only present while skit is generating.
+ */
+export function onGenerationProgress(
+  callback: (data: {
+    sessionId: string;
+    phase: string;
+    message: string;
+    timestamp: number;
+  }) => void
+): () => void {
+  if (!eventListeners.has('generation:progress')) {
+    eventListeners.set('generation:progress', new Set());
+  }
+
+  const wrappedCallback: EventCallback = (data: unknown) => {
+    callback(data as {
+      sessionId: string;
+      phase: string;
+      message: string;
+      timestamp: number;
+    });
+  };
+  eventListeners.get('generation:progress')!.add(wrappedCallback);
+
+  return () => {
+    const listeners = eventListeners.get('generation:progress');
+    if (listeners) {
+      listeners.delete(wrappedCallback);
+    }
+  };
+}
+
+/**
+ * Emit generation progress (Director form → PartyKit → broadcast to room).
+ */
+export function emitGenerationProgress(
+  sessionId: string,
+  phase: 'characters' | 'script' | 'images',
+  message: string
+): void {
+  if (!partySocket) {
+    return;
+  }
+
+  sendMessageWithQueue(
+    JSON.stringify({
+      type: 'generation:progress',
+      data: { sessionId, phase, message },
+    })
+  );
 }
 
 /**

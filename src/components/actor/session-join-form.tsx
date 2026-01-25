@@ -17,6 +17,7 @@ import { sessionCodeAtom } from '@/src/state/atoms/session-atom';
 import { validateSessionCodeSecurity } from '@/src/lib/utils/session-code';
 import { ErrorMessage } from '@/src/components/ui/error-message';
 import { ConnectionStatus } from '@/src/components/ui/connection-status';
+import { VibeButton } from '@/src/components/ui/vibe-button';
 import {
   initializePartyKitClient,
   getPartyKitClient,
@@ -42,7 +43,7 @@ interface SessionJoinFormProps {
 
 export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
   const router = useRouter();
-  const [, setParticipant] = useAtom(participantAtom);
+  const [participant, setParticipant] = useAtom(participantAtom);
   const [, setVibe] = useAtom(vibeAtom);
   const [sessionCodeFromAtom, setSessionCode] = useAtom(sessionCodeAtom);
 
@@ -53,6 +54,24 @@ export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
   const [loading, setLoading] = useState(false);
   const [joined, setJoined] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusType>('disconnected');
+  
+  // Check if participant already exists for this session
+  const hasExistingParticipant = participant && participant.sessionId === sessionCode;
+  
+  // Auto-set joined state if participant exists
+  useEffect(() => {
+    if (hasExistingParticipant && !joined && participant) {
+      console.log('[SessionJoinForm] Participant already exists for this session, marking as joined:', {
+        participantId: participant.id,
+        sessionId: participant.sessionId,
+      });
+      setJoined(true);
+      // Restore name from participant
+      if (participant.name && !name) {
+        setName(participant.name);
+      }
+    }
+  }, [hasExistingParticipant, joined, participant?.id, participant?.sessionId, participant?.name, name]);
 
   // Update session code input when atom changes (e.g., from URL)
   useEffect(() => {
@@ -80,6 +99,17 @@ export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
 
     if (!name.trim()) {
       setError('Name is required');
+      return;
+    }
+
+    // CRITICAL: Prevent duplicate joins if participant already exists
+    if (hasExistingParticipant) {
+      console.log('[SessionJoinForm] Participant already exists, skipping join:', {
+        participantId: participant.id,
+        sessionId: participant.sessionId,
+        currentSessionCode: sessionCode,
+      });
+      setError('You have already joined this session. Please refresh the page if you need to rejoin.');
       return;
     }
 
@@ -168,7 +198,15 @@ export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
         // The page will update when character is assigned
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join session');
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && /network|fetch|Failed to fetch|ECONNREFUSED|ENOTFOUND/i.test(err.message));
+
+      if (isNetworkError) {
+        setError('Network error while trying to join the session. Please check your connection and try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to join session');
+      }
     } finally {
       setLoading(false);
     }
@@ -231,13 +269,13 @@ export function SessionJoinForm({ initialSessionCode }: SessionJoinFormProps) {
         </div>
       )}
 
-      <button
+      <VibeButton
         type="submit"
-        disabled={loading || joined}
-        className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-md font-medium text-base disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 active:bg-primary/80 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+        disabled={loading || joined || !name.trim() || !sessionCode.trim()}
+        className="w-full min-w-0"
       >
         {loading ? 'Joining...' : joined ? 'Joined' : 'Join Session'}
-      </button>
+      </VibeButton>
     </form>
   );
 }

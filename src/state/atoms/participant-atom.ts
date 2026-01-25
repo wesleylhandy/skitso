@@ -1,17 +1,17 @@
 /**
  * Participant Atom
- * 
+ *
  * Manages the current participant data (Actor or Director) for the session
- * with localStorage persistence.
+ * with persistent storage backed by safe browser storage.
  */
 
-import { atomWithStorage } from 'jotai/utils';
 import type { Participant } from '../types/session';
+import { createPersistentAtom } from '../utils/safe-storage';
 
 /**
- * Participant atom with localStorage persistence
- * 
+ * Participant atom with persistent storage
+ *
  * Key: 'participant'
  * Default: null
  */
-export const participantAtom = atomWithStorage<Participant | null>('participant', null);
+export const participantAtom = createPersistentAtom<Participant | null>('participant', null);

@@ -17,7 +17,9 @@ import { castAtom } from '@/src/state/atoms/cast-atom';
 import {
   initializePartyKitClient,
   onWrapPartyVote,
+  onWrapPartyData,
   submitVote,
+  updateWrapPartyData,
 } from '@/src/lib/partykit/client';
 import type { Vote, VoteCategory, Character } from '@/src/state/types/session';
 
@@ -31,7 +33,7 @@ interface VotingInterfaceProps {
  * Provides voting interface for wrap party with real-time synchronization.
  */
 export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
-  const { visualTokens, getSectionTitle } = useVibe();
+  const { visualTokens, getSectionTitle, getErrorMessage } = useVibe();
   const participant = useAtomValue(participantAtom);
   const sessionCode = useAtomValue(sessionCodeAtom);
   const cast = useAtomValue(castAtom);
@@ -61,7 +63,7 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
     if (!sessionCode || !participant) return;
 
     initializePartyKitClient(sessionCode);
-    const unsubscribe = onWrapPartyVote((data) => {
+    const unsubscribeVote = onWrapPartyVote((data) => {
       if (data.sessionId === sessionCode) {
         // Update local state with new vote
         setWrapPartyData((current) => {
@@ -87,7 +89,16 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
       }
     });
 
-    return unsubscribe;
+    const unsubscribeData = onWrapPartyData((data) => {
+      if (data.sessionId === sessionCode) {
+        setWrapPartyData(data.wrapPartyData);
+      }
+    });
+
+    return () => {
+      unsubscribeVote();
+      unsubscribeData();
+    };
   }, [sessionCode, participant, setWrapPartyData]);
 
   // Load existing votes for this participant
@@ -128,7 +139,8 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
       createdAt: now,
     };
 
-    // Update local state optimistically
+    // Update local state optimistically and sync to PartyKit
+    let nextData: typeof wrapPartyData | null = null;
     setWrapPartyData((current) => {
       if (!current) return current;
 
@@ -137,11 +149,17 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
         (v) => !(v.participantId === participant.id && v.category === category)
       );
 
-      return {
+      nextData = {
         ...current,
         votes: [...filteredVotes, vote],
       };
+
+      return nextData;
     });
+
+    if (nextData) {
+      updateWrapPartyData(sessionCode, nextData);
+    }
 
     // Broadcast vote via socket
     submitVote(sessionCode, vote);
@@ -199,6 +217,19 @@ export function VotingInterface({ onVoteSubmitted }: VotingInterfaceProps) {
   const bestActorResults = getVoteResults('best_actor');
   const favoriteMomentResults = getVoteResults('favorite_moment');
   const funniestMomentResults = getVoteResults('funniest_moment');
+
+  if (!participant || !sessionCode) {
+    return (
+      <div className="voting-interface" style={{ color: visualTokens.primaryColor }}>
+        <h2 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+          {getSectionTitle('wrapParty')}
+        </h2>
+        <p style={{ fontFamily: visualTokens.bodyFont }}>
+          {getErrorMessage('wrapPartyUnavailable')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="voting-interface" style={{ color: visualTokens.primaryColor }}>

@@ -26,7 +26,9 @@ vi.mock('@/src/lib/partykit/client', () => ({
   })),
   isPartyKitConnected: vi.fn(() => true),
   onWrapPartyVote: vi.fn(() => () => {}),
+  onWrapPartyData: vi.fn(() => () => {}),
   submitVote: vi.fn(),
+  updateWrapPartyData: vi.fn(),
   getConnectionStatus: vi.fn(() => 'connected'),
 }));
 
@@ -35,6 +37,7 @@ const mockCharacters: Character[] = [
     id: 'char-1',
     sessionId: 'session-1',
     participantId: 'participant-1',
+    isLocked: false,
     name: 'Character One',
     archetypeLabel: 'The Main Character',
     personalityTraits: ['funny', 'bold'],
@@ -49,6 +52,7 @@ const mockCharacters: Character[] = [
     id: 'char-2',
     sessionId: 'session-1',
     participantId: 'participant-2',
+    isLocked: false,
     name: 'Character Two',
     archetypeLabel: 'The Sidekick',
     personalityTraits: ['loyal', 'funny'],
@@ -73,6 +77,8 @@ describe('VotingInterface', () => {
       role: 'actor',
       name: 'Test Actor',
       characterAssignment: mockCharacters[0],
+      assignmentStatus: 'none',
+      requestedCharacterId: null,
       connectionStatus: 'connected',
       joinedAt: Date.now(),
       deviceInfo: {
@@ -161,10 +167,10 @@ describe('VotingInterface', () => {
 
     render(<VotingInterface />);
     
-    // Should show vote count or results
+    // Should show updated average and vote count
     await waitFor(() => {
-      // Results should be visible
-      expect(screen.getByText(/results/i)).toBeInTheDocument();
+      expect(screen.getByText(/average:/i)).toBeInTheDocument();
+      expect(screen.getByText(/\(1 votes\)/i)).toBeInTheDocument();
     });
   });
 

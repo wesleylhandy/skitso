@@ -15,6 +15,10 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       primaryColor: '#8AFB17',
       accentColor: '#BF40BF',
       textColor: '#FFFFFF', // WCAG AA compliant (21:1 contrast on #0A0A0A)
+      successColor: '#8AFB17', // Bright green for success
+      warningColor: '#FFD700', // Gold/yellow for warnings
+      errorColor: '#FF1744', // Bright red for errors
+      infoColor: '#BF40BF', // Accent color for info
       headerFont: 'Inter Black Italic, sans-serif',
       bodyFont: 'Inter, sans-serif',
       borderRadius: '4px',
@@ -34,6 +38,7 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
     linguisticTone: {
       buttonLabels: {
         submit: 'Send It',
+        submitLoading: 'Generating...',
         cancel: 'Nah',
         start: 'Let\'s Go',
         startPerformance: 'Start the Show',
@@ -51,6 +56,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       },
       placeholders: {
         theme: 'What\'s the vibe? (10-200 chars)',
+        plot: 'Drop the full lore, no cap (optional)...',
+        jokes: 'Inside jokes, catchphrases, cursed lines (one per line)...',
+        predefinedCharacterName: 'Character name (main character energy)',
+        predefinedCharacterRole: 'Role / archetype (optional)',
+        predefinedCharactersDescription:
+          'Pre-define characters you want in the chaos. AI will fill the rest of the squad.',
+        loadingCharactersBody: 'Cooking up unhinged characters with wild motivations...',
+        loadingGeneratingBody: 'Writing the script and dripping visuals...',
+        jokesCountLabel: 'custom lines locked in',
         name: 'Your name',
         sessionCode: 'Enter session code',
         search: 'Search...',
@@ -60,12 +74,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         invalid: 'That ain\'t it, chief',
         network: 'Connection failed, try again',
         generation: 'AI had a moment, retry?',
+        sessionLoadFailed: 'Session couldn\'t be loaded. Double-check the code and try again.',
+        wrapPartyUnavailable: 'Wrap Party isn\'t available because we lost track of your session. Rejoin from your link.',
       },
       successMessages: {
         saved: 'Locked in!',
         joined: 'You\'re in!',
         shared: 'Link dropped!',
         generated: 'It\'s ready!',
+        wrapPartyReady: 'Performance wrapped! Time to vote and share.',
       },
       sectionTitles: {
         vibeSelection: 'Pick Your Vibe',
@@ -80,6 +97,26 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         script: 'The Script',
         performance: 'The Stage',
         wrapParty: 'The Wrap',
+        wrapPartySubtitle: 'Performance complete. Vote, meme, and send it to the group chat.',
+        wrapPartyNotReady: 'Wrap Party isn\'t ready yet. Wait for the chaos to fully land.',
+        joinSessionTitle: 'Join Session',
+        loadingSession: 'Loading session...',
+        redirectingToStage: 'Redirecting you to the stage...',
+        actorWelcomeTitle: 'Welcome to the cast',
+        lockedAssignmentIntro: 'Your character assignment is locked in:',
+        waitingForPerformance: 'Waiting for the director to start the performance...',
+        waitingForGeneration: 'Waiting for the director to finish cooking the script and characters...',
+        // Director form labels
+        themeLabel: 'Theme',
+        plotLabel: 'Deep Lore',
+        toneLabel: 'Tone',
+        participantsLabel: 'The Squad',
+        chaosLevelLabel: 'Chaos Level',
+        jokesLabel: 'Custom Lines',
+        predefinedCharactersLabel: 'Pre-Defined Characters',
+        // Loading titles
+        loadingCharactersTitle: 'Generating Characters...',
+        loadingContentTitle: 'Generating Content...',
       },
     },
     aiParameters: {
@@ -140,6 +177,7 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
     linguisticTone: {
       buttonLabels: {
         submit: 'Submit',
+        submitLoading: 'Generating...',
         cancel: 'Cancel',
         start: 'Begin',
         startPerformance: 'Begin Performance',
@@ -157,6 +195,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       },
       placeholders: {
         theme: 'Enter theme (10-200 characters)',
+        plot: 'Optional: richer plot beats, motifs, or subtext...',
+        jokes: 'Optional: specific lines or callbacks to weave into the script...',
+        predefinedCharacterName: 'Character name',
+        predefinedCharacterRole: 'Role / archetype (optional)',
+        predefinedCharactersDescription:
+          'Pre-define key characters; the AI will generate supporting roles to complete the ensemble.',
+        loadingCharactersBody: 'Composing the cast with balanced, grounded archetypes...',
+        loadingGeneratingBody: 'Writing the script and refining structure...',
+        jokesCountLabel: 'custom lines added',
         name: 'Your name',
         sessionCode: 'Enter session code',
         search: 'Search...',
@@ -166,12 +213,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         invalid: 'Invalid input',
         network: 'Connection error, please retry',
         generation: 'Generation failed, please retry',
+        sessionLoadFailed: 'We couldn\'t load this session. Please verify the link or code.',
+        wrapPartyUnavailable: 'Wrap Party is unavailable. Rejoin the session and try again.',
       },
       successMessages: {
         saved: 'Saved',
         joined: 'Joined successfully',
         shared: 'Shared',
         generated: 'Generated',
+        wrapPartyReady: 'Performance complete. Time to debrief.',
       },
       sectionTitles: {
         vibeSelection: 'Select Production Style',
@@ -186,6 +236,26 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         script: 'Script',
         performance: 'Performance',
         wrapParty: 'Wrap Party',
+        wrapPartySubtitle: 'Performance complete. Share notes, favorites, and quiet applause.',
+        wrapPartyNotReady: 'Wrap Party will unlock once the performance is complete.',
+        joinSessionTitle: 'Join Session',
+        loadingSession: 'Loading session...',
+        redirectingToStage: 'Redirecting to the stage...',
+        actorWelcomeTitle: 'Welcome to the cast',
+        lockedAssignmentIntro: 'Your character assignment is confirmed:',
+        waitingForPerformance: 'Waiting for the director to begin the performance.',
+        waitingForGeneration: 'Waiting for the director to finalize script and characters.',
+        // Director form labels
+        themeLabel: 'Theme',
+        plotLabel: 'Plot',
+        toneLabel: 'Tone',
+        participantsLabel: 'Participants',
+        chaosLevelLabel: 'Chaos Level',
+        jokesLabel: 'Custom Lines',
+        predefinedCharactersLabel: 'Pre-Defined Characters',
+        // Loading titles
+        loadingCharactersTitle: 'Generating Characters...',
+        loadingContentTitle: 'Generating Content...',
       },
     },
     aiParameters: {
@@ -223,6 +293,10 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       primaryColor: '#FF6B35',
       accentColor: '#004E89',
       textColor: '#000000', // WCAG AA compliant (18.1:1 contrast on #F5F5F5)
+      successColor: '#4CAF50', // Classic green for success
+      warningColor: '#FF9800', // Orange for warnings
+      errorColor: '#F44336', // Red for errors
+      infoColor: '#004E89', // Accent blue for info
       headerFont: 'Comic Sans MS, cursive',
       bodyFont: 'Arial, sans-serif',
       borderRadius: '12px',
@@ -242,6 +316,7 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
     linguisticTone: {
       buttonLabels: {
         submit: 'Let\'s Do This!',
+        submitLoading: 'Generating...',
         cancel: 'Never Mind',
         start: 'Action!',
         startPerformance: 'Lights, Camera, Action!',
@@ -259,6 +334,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       },
       placeholders: {
         theme: 'What\'s the story? (10-200 chars)',
+        plot: 'Optional: juicy plot beats, running gags, or big twists...',
+        jokes: 'Throw in catchphrases or jokes (one per line)...',
+        predefinedCharacterName: 'Character name',
+        predefinedCharacterRole: 'Role on the show (optional)',
+        predefinedCharactersDescription:
+          'Pre-define regulars for this episode. The AI will add guest stars to match your cast size.',
+        loadingCharactersBody: 'Casting the crew with sitcom-ready archetypes...',
+        loadingGeneratingBody: 'Punching up jokes and building scenes...',
+        jokesCountLabel: 'gags locked in',
         name: 'Your name',
         sessionCode: 'Enter session code',
         search: 'Search...',
@@ -268,12 +352,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         invalid: 'Hmm, that doesn\'t look right',
         network: 'Connection hiccup, try again',
         generation: 'Something went wrong, retry?',
+        sessionLoadFailed: 'We couldn\'t find that session. Try the link again.',
+        wrapPartyUnavailable: 'Wrap Party is taking a break. Rejoin from your session link.',
       },
       successMessages: {
         saved: 'All set!',
         joined: 'Welcome!',
         shared: 'Shared!',
         generated: 'Ready to go!',
+        wrapPartyReady: 'That\'s a wrap! Time for curtain call.',
       },
       sectionTitles: {
         vibeSelection: 'Choose Your Style',
@@ -288,6 +375,26 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         script: 'The Script',
         performance: 'Lights, Camera, Action!',
         wrapParty: 'That\'s a Wrap!',
+        wrapPartySubtitle: 'The episode is over. Hand out awards and relive the best bits.',
+        wrapPartyNotReady: 'Wrap Party opens once this episode officially ends.',
+        joinSessionTitle: 'Join Session',
+        loadingSession: 'Loading session...',
+        redirectingToStage: 'Heading to the stage...',
+        actorWelcomeTitle: 'Welcome to the show',
+        lockedAssignmentIntro: 'Your role for this episode is locked:',
+        waitingForPerformance: 'Waiting for the director to roll cameras.',
+        waitingForGeneration: 'Waiting for the writer\'s room to finish the script.',
+        // Director form labels
+        themeLabel: 'Theme',
+        plotLabel: 'Plot',
+        toneLabel: 'Tone',
+        participantsLabel: 'Cast Size',
+        chaosLevelLabel: 'Chaos Level',
+        jokesLabel: 'Jokes & Phrases',
+        predefinedCharactersLabel: 'Pre-Defined Characters',
+        // Loading titles
+        loadingCharactersTitle: 'Generating Characters...',
+        loadingContentTitle: 'Generating Content...',
       },
     },
     aiParameters: {
@@ -344,6 +451,7 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
     linguisticTone: {
       buttonLabels: {
         submit: 'SEND IT!!!',
+        submitLoading: 'GENERATING...',
         cancel: 'NOPE',
         start: 'CHAOS MODE',
         startPerformance: 'START THE CHAOS!!!',
@@ -361,6 +469,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       },
       placeholders: {
         theme: 'WHAT\'S THE CHAOS? (10-200 CHARS)',
+        plot: 'OPTIONAL LORE DUMP / PROPHECY / FANFIC...',
+        jokes: 'TYPE UNHINGED LINES OR MEMES (ONE PER LINE)...',
+        predefinedCharacterName: 'CHARACTER NAME (MAKE IT CHAOTIC)',
+        predefinedCharacterRole: 'ROLE / CHAOS JOB (OPTIONAL)',
+        predefinedCharactersDescription:
+          'LOCK IN ANY CHAOTIC OCs FIRST. AI WILL SPAWN MORE AGENTS OF CHAOS TO FILL THE CAST.',
+        loadingCharactersBody: 'BREWING UNSTABLE CHARACTERS WITH MAXIMUM BRAINROT...',
+        loadingGeneratingBody: 'WRITING SCRIPT + COOKING IMAGES AT THE SAME TIME. STAY SEATED.',
+        jokesCountLabel: 'chaos lines locked',
         name: 'YOUR NAME',
         sessionCode: 'ENTER CODE',
         search: 'SEARCH...',
@@ -370,12 +487,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         invalid: 'WRONG!!!',
         network: 'CONNECTION BROKE, RETRY?',
         generation: 'AI BROKE, RETRY?',
+        sessionLoadFailed: 'SESSION NOT FOUND. CHECK THE CODE AND RUN IT BACK.',
+        wrapPartyUnavailable: 'WRAP PARTY GLITCHED. REJOIN THE CHAOS AND TRY AGAIN.',
       },
       successMessages: {
         saved: 'LOCKED!!!',
         joined: 'YOU\'RE IN!!!',
         shared: 'SPREAD!!!',
         generated: 'READY!!!',
+        wrapPartyReady: 'CHAOS COMPLETE!!! VOTE AND SCREAM!!!',
       },
       sectionTitles: {
         vibeSelection: 'PICK YOUR CHAOS',
@@ -390,6 +510,26 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         script: 'THE SCRIPT',
         performance: 'THE STAGE',
         wrapParty: 'THE WRAP',
+        wrapPartySubtitle: 'SHOW\'S OVER. TIME TO VOTE ON THE CHAOS.',
+        wrapPartyNotReady: 'WRAP PARTY UNLOCKS AFTER THE FINAL SCENE.',
+        joinSessionTitle: 'JOIN THE CHAOS',
+        loadingSession: 'LOADING SESSION...',
+        redirectingToStage: 'SENDING YOU TO THE STAGE...',
+        actorWelcomeTitle: 'WELCOME TO THE CHAOS',
+        lockedAssignmentIntro: 'YOUR CHARACTER IS LOCKED. NO BACKSIES.',
+        waitingForPerformance: 'WAITING FOR DIRECTOR TO UNLEASH THE PERFORMANCE...',
+        waitingForGeneration: 'WAITING FOR THE AI TO FINISH COOKING THE SCRIPT + CAST...',
+        // Director form labels
+        themeLabel: 'THE PROMPT',
+        plotLabel: 'DEEP LORE',
+        toneLabel: 'VIBE',
+        participantsLabel: 'THE SQUAD SIZE',
+        chaosLevelLabel: 'CHAOS LEVEL',
+        jokesLabel: 'CUSTOM CHAOS LINES',
+        predefinedCharactersLabel: 'PRE-DEFINED CHAOS CHARACTERS',
+        // Loading titles
+        loadingCharactersTitle: 'GENERATING CHARACTERS...',
+        loadingContentTitle: 'GENERATING CONTENT...',
       },
     },
     aiParameters: {
@@ -430,6 +570,10 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       primaryColor: '#2C3E50',
       accentColor: '#7F8C8D',
       textColor: '#000000', // WCAG AA compliant (21:1 contrast on #FFFFFF)
+      successColor: '#27AE60', // Muted green for success
+      warningColor: '#E67E22', // Muted orange for warnings
+      errorColor: '#E74C3C', // Muted red for errors
+      infoColor: '#3498DB', // Muted blue for info
       headerFont: 'Helvetica Neue, sans-serif',
       bodyFont: 'Helvetica Neue, sans-serif',
       borderRadius: '2px',
@@ -449,6 +593,7 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
     linguisticTone: {
       buttonLabels: {
         submit: 'Submit',
+        submitLoading: 'Generating...',
         cancel: 'Cancel',
         start: 'Start',
         startPerformance: 'Start Performance',
@@ -466,6 +611,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
       },
       placeholders: {
         theme: 'Theme (10-200 characters)',
+        plot: 'Optional: extended plot details, beats, or constraints...',
+        jokes: 'Optional: specific lines to incorporate (one per line)...',
+        predefinedCharacterName: 'Character name',
+        predefinedCharacterRole: 'Role (optional)',
+        predefinedCharactersDescription:
+          'Pre-define important characters here; the AI will create any remaining roles needed.',
+        loadingCharactersBody: 'Generating balanced characters and archetypes...',
+        loadingGeneratingBody: 'Generating script and visuals...',
+        jokesCountLabel: 'custom lines',
         name: 'Name',
         sessionCode: 'Session code',
         search: 'Search',
@@ -475,12 +629,15 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         invalid: 'Invalid input',
         network: 'Connection error',
         generation: 'Generation failed',
+        sessionLoadFailed: 'Unable to load this session. Please verify the link or code.',
+        wrapPartyUnavailable: 'Wrap Party is unavailable. Rejoin the session to continue.',
       },
       successMessages: {
         saved: 'Saved',
         joined: 'Joined',
         shared: 'Shared',
         generated: 'Generated',
+        wrapPartyReady: 'Performance complete. Time to reflect.',
       },
       sectionTitles: {
         vibeSelection: 'Select Style',
@@ -495,6 +652,26 @@ export const VIBE_CONFIGS: Record<string, VibeContext> = {
         script: 'Script',
         performance: 'Performance',
         wrapParty: 'Completion',
+        wrapPartySubtitle: 'Performance complete. Capture feedback and highlights.',
+        wrapPartyNotReady: 'Completion screen will appear once the performance has finished.',
+        joinSessionTitle: 'Join Session',
+        loadingSession: 'Loading session...',
+        redirectingToStage: 'Redirecting to the stage...',
+        actorWelcomeTitle: 'Welcome',
+        lockedAssignmentIntro: 'Your character assignment is confirmed:',
+        waitingForPerformance: 'Waiting for the director to begin.',
+        waitingForGeneration: 'Waiting for the script and characters to finish generating.',
+        // Director form labels
+        themeLabel: 'Theme',
+        plotLabel: 'Plot',
+        toneLabel: 'Tone',
+        participantsLabel: 'Participants',
+        chaosLevelLabel: 'Chaos Level',
+        jokesLabel: 'Jokes & Phrases',
+        predefinedCharactersLabel: 'Pre-Defined Characters',
+        // Loading titles
+        loadingCharactersTitle: 'Generating Characters...',
+        loadingContentTitle: 'Generating Content...',
       },
     },
     aiParameters: {

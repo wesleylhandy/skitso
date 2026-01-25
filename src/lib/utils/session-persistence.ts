@@ -1,12 +1,15 @@
 /**
  * Session Persistence Utility
- * 
+ *
  * Handles session data persistence with 24-hour expiration.
+ * Aligns with data-model Session entity (createdAt/expiresAt)
+ * and PartyKit session storage semantics.
  */
 
 import type { WrapPartyData } from '@/src/state/types/session';
 
-const SESSION_EXPIRY_HOURS = 24;
+export const SESSION_EXPIRY_HOURS = 24;
+export const SESSION_EXPIRY_MS = SESSION_EXPIRY_HOURS * 60 * 60 * 1000;
 const STORAGE_KEY_PREFIX = 'skitso_session_';
 
 /**
@@ -20,15 +23,39 @@ function getStorageKey(sessionId: string): string {
 }
 
 /**
- * Checks if a session has expired
- * 
+ * Computes the session expiration timestamp from a creation time.
+ *
+ * This mirrors the Session.expiresAt field described in the data model
+ * (`createdAt + 24 hours`) and should be used wherever we create
+ * new sessions on the client.
+ *
  * @param createdAt - Timestamp when session was created
+ * @returns Unix timestamp when the session expires
+ */
+export function getSessionExpiryTimestamp(createdAt: number): number {
+  return createdAt + SESSION_EXPIRY_MS;
+}
+
+/**
+ * Checks if a session has expired based on its creation time.
+ *
+ * @param createdAt - Timestamp when session was created
+ * @param now - Optional override for "current" time (for tests)
  * @returns true if session has expired
  */
-export function isSessionExpired(createdAt: number): boolean {
-  const now = Date.now();
-  const expiryTime = createdAt + (SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
-  return now > expiryTime;
+export function isSessionExpired(createdAt: number, now: number = Date.now()): boolean {
+  return now > getSessionExpiryTimestamp(createdAt);
+}
+
+/**
+ * Checks if a session has expired based on its expiresAt timestamp.
+ *
+ * @param expiresAt - Session.expiresAt timestamp
+ * @param now - Optional override for "current" time (for tests)
+ * @returns true if session has expired
+ */
+export function hasSessionExpired(expiresAt: number, now: number = Date.now()): boolean {
+  return now > expiresAt;
 }
 
 /**
@@ -110,9 +137,9 @@ export function cleanupExpiredSessions(): void {
         const stored = localStorage.getItem(key);
         if (stored) {
           try {
-            const data = JSON.parse(stored) as { _savedAt?: number; createdAt?: number };
-            const timestamp = data._savedAt || data.createdAt;
-            if (timestamp && isSessionExpired(timestamp)) {
+            const data = JSON.parse(stored) as { _savedAt?: number; createdAt?: number; expiresAt?: number };
+            const timestamp = data.expiresAt ?? data._savedAt ?? data.createdAt;
+            if (timestamp && hasSessionExpired(timestamp)) {
               keysToRemove.push(key);
             }
           } catch {

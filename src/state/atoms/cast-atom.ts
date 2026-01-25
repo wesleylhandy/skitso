@@ -1,17 +1,17 @@
 /**
  * Cast Atom
- * 
+ *
  * Manages the generated characters (cast) for the current session
- * with localStorage persistence.
+ * with persistent storage backed by safe browser storage.
  */
 
-import { atomWithStorage } from 'jotai/utils';
 import type { Character } from '../types/session';
+import { createPersistentAtom } from '../utils/safe-storage';
 
 /**
- * Cast atom with localStorage persistence
- * 
+ * Cast atom with persistent storage
+ *
  * Key: 'cast'
  * Default: []
  */
-export const castAtom = atomWithStorage<Character[]>('cast', []);
+export const castAtom = createPersistentAtom<Character[]>('cast', []);
