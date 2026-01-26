@@ -57,12 +57,22 @@ export function BackButton({ to, label, className }: BackButtonProps) {
     gap: '0.5rem',
     minHeight: '44px', // WCAG touch target requirement
     minWidth: '44px',
+    touchAction: 'manipulation',
   };
 
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
+      onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
       onKeyDown={handleKeyDown}
       aria-label={`Go back: ${buttonLabel}`}
       className={className}

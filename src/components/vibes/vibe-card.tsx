@@ -70,8 +70,8 @@ export const VibeCard = forwardRef<HTMLButtonElement, VibeCardProps>(function Vi
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      minWidth: '200px',
-      minHeight: '250px',
+      width: 'clamp(240px, 25vw, 300px)',
+      height: 'clamp(280px, 30vw, 340px)',
       position: 'relative',
       overflow: 'hidden',
       outline: 'none',
@@ -97,13 +97,25 @@ export const VibeCard = forwardRef<HTMLButtonElement, VibeCardProps>(function Vi
     <button
       ref={ref}
       type="button"
-      onClick={handleClick}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
+      onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
       onKeyDown={handleKeyDown}
       aria-label={ariaLabel}
       aria-pressed={isSelected}
       data-vibe={vibe}
       className="vibe-card"
-      style={cardStyle}
+      style={{
+        ...cardStyle,
+        touchAction: 'manipulation',
+      }}
       onMouseEnter={(e) => {
         if (!isSelected) {
           e.currentTarget.style.boxShadow = `0 0 20px ${config.visualTokens.primaryColor}60`;
@@ -118,8 +130,8 @@ export const VibeCard = forwardRef<HTMLButtonElement, VibeCardProps>(function Vi
       {previewImage && (
         <div
           style={{
-            width: '150px',
-            height: '150px',
+            width: 'clamp(140px, 18vw, 180px)',
+            height: 'clamp(140px, 18vw, 180px)',
             borderRadius: config.visualTokens.borderRadius,
             marginBottom: config.visualTokens.spacing.element,
             backgroundColor: config.visualTokens.bgColor,
@@ -133,8 +145,8 @@ export const VibeCard = forwardRef<HTMLButtonElement, VibeCardProps>(function Vi
           <Image
             src={previewImage}
             alt={`${displayName} vibe preview`}
-            width={150}
-            height={150}
+            width={180}
+            height={180}
             className="vibe-card-preview"
             style={{
               borderRadius: config.visualTokens.borderRadius,

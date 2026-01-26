@@ -36,6 +36,10 @@ import {
   updateScript,
   emitGenerationProgress,
   onCastUpdate,
+  onReconnect,
+  fetchSessionState,
+  onScriptUpdate,
+  onGenerationProgress,
 } from "@/src/lib/partykit/client";
 
 export function DirectorConfigForm() {
@@ -112,6 +116,189 @@ export function DirectorConfigForm() {
       unsubscribeCastUpdate();
     };
   }, [sessionCode, setCast]);
+
+  // Handle reconnection during generation
+  // If connection drops while generating, recover state and resume monitoring
+  useEffect(() => {
+    if (!sessionCode || !loading) {
+      return;
+    }
+
+    let mounted = true;
+
+    const handleReconnection = async (data: { sessionId: string }) => {
+      if (data.sessionId !== sessionCode || !mounted) {
+        return;
+      }
+
+      // Only handle reconnection if we're currently generating
+      if (!loading || loadingStep === "idle") {
+        return;
+      }
+
+      console.log(
+        "[DirectorConfigForm] Reconnection detected during generation, recovering state",
+        {
+          sessionId: sessionCode,
+          loadingStep,
+          loading,
+        },
+      );
+
+      try {
+        // Fetch current state from PartyKit
+        const recoveredState = await fetchSessionState(sessionCode);
+
+        if (!recoveredState || !mounted) {
+          return;
+        }
+
+        // Update local state to match server state
+        if (recoveredState.cast && recoveredState.cast.length > 0) {
+          setCast(recoveredState.cast);
+          castRef.current = recoveredState.cast;
+
+          // Check if characters are complete
+          const allCharactersHaveImages = recoveredState.cast.every(
+            (char) =>
+              char.visualRepresentation?.imageUrl &&
+              char.visualRepresentation.imageUrl.length > 0,
+          );
+
+          if (allCharactersHaveImages) {
+            setGenerationProgress((prev) => ({
+              ...prev,
+              characters: { completed: true, progress: 100 },
+              images: {
+                completed: true,
+                progress: 100,
+                completedCount: recoveredState.cast.length,
+                totalCount: recoveredState.cast.length,
+              },
+            }));
+          } else {
+            // Some images still generating, update progress
+            const imagesCompleted = recoveredState.cast.filter(
+              (char) =>
+                char.visualRepresentation?.imageUrl &&
+                char.visualRepresentation.imageUrl.length > 0,
+            ).length;
+            const totalImages = recoveredState.cast.length;
+
+            setGenerationProgress((prev) => ({
+              ...prev,
+              characters: { completed: true, progress: 100 },
+              images: {
+                completed: imagesCompleted >= totalImages,
+                progress: totalImages > 0 ? Math.round((imagesCompleted / totalImages) * 100) : 0,
+                completedCount: imagesCompleted,
+                totalCount: totalImages,
+              },
+            }));
+          }
+        }
+
+        if (recoveredState.script) {
+          setScript(recoveredState.script);
+          setGenerationProgress((prev) => ({
+            ...prev,
+            script: { completed: true, progress: 100 },
+          }));
+        }
+
+        // Check if generation is complete based on recovered state
+        const hasCompleteScript = recoveredState.script !== null;
+        const hasCompleteCast =
+          recoveredState.cast && recoveredState.cast.length > 0;
+        const allImagesGenerated =
+          hasCompleteCast &&
+          recoveredState.cast!.every(
+            (char) =>
+              char.visualRepresentation?.imageUrl &&
+              char.visualRepresentation.imageUrl.length > 0,
+          );
+
+        // If generation is complete, transition to casting state
+        if (hasCompleteScript && hasCompleteCast && allImagesGenerated) {
+          console.log(
+            "[DirectorConfigForm] Generation complete after reconnection, transitioning to casting",
+          );
+          setSessionState("casting");
+          updateSessionState(sessionCode, "casting");
+          setLoading(false);
+          setLoadingStep("idle");
+          setGenerationAbortController(null);
+        } else if (recoveredState.status === "casting") {
+          // Server says we're in casting state, but we're still loading
+          // This means generation completed while we were disconnected
+          console.log(
+            "[DirectorConfigForm] Server state is casting, generation must have completed",
+          );
+          setSessionState("casting");
+          setLoading(false);
+          setLoadingStep("idle");
+          setGenerationAbortController(null);
+        } else {
+          // Generation still in progress, continue monitoring
+          console.log(
+            "[DirectorConfigForm] Generation still in progress after reconnection",
+            {
+              hasCompleteScript,
+              hasCompleteCast,
+              allImagesGenerated,
+              serverStatus: recoveredState.status,
+            },
+          );
+        }
+      } catch (error) {
+        console.error(
+          "[DirectorConfigForm] Failed to recover state after reconnection:",
+          error,
+        );
+        // Continue with current generation state - don't fail completely
+      }
+    };
+
+    // Listen for script updates during reconnection recovery
+    const unsubscribeScript = onScriptUpdate((data) => {
+      if (data.sessionId === sessionCode && mounted && loading) {
+        setScript(data.script);
+        setGenerationProgress((prev) => ({
+          ...prev,
+          script: { completed: true, progress: 100 },
+        }));
+      }
+    });
+
+    // Listen for generation progress updates during reconnection recovery
+    const unsubscribeGenerationProgress = onGenerationProgress((data) => {
+      if (data.sessionId === sessionCode && mounted && loading) {
+        // Update progress based on phase
+        if (data.phase === "characters") {
+          setGenerationProgress((prev) => ({
+            ...prev,
+            characters: { completed: false, progress: 50 },
+          }));
+          setLoadingStep("characters");
+        } else if (data.phase === "script" || data.phase === "images") {
+          setGenerationProgress((prev) => ({
+            ...prev,
+            script: { completed: false, progress: 50 },
+          }));
+          setLoadingStep("generating");
+        }
+      }
+    });
+
+    const unsubscribeReconnect = onReconnect(handleReconnection);
+
+    return () => {
+      mounted = false;
+      unsubscribeReconnect();
+      unsubscribeScript();
+      unsubscribeGenerationProgress();
+    };
+  }, [sessionCode, loading, loadingStep, setCast, setScript, setSessionState]);
 
   /**
    * Generate images for all characters in parallel
@@ -1062,7 +1249,16 @@ export function DirectorConfigForm() {
                 </h3>
                 <button
                   type="button"
-                  onClick={handleCancelGeneration}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCancelGeneration();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCancelGeneration();
+                  }}
                   className="px-4 py-2 rounded font-semibold transition-opacity hover:opacity-90"
                   style={{
                     backgroundColor: "var(--color-error, #ef4444)",
@@ -1070,6 +1266,7 @@ export function DirectorConfigForm() {
                     cursor: "pointer",
                     minHeight: "44px",
                     minWidth: "44px",
+                    touchAction: "manipulation",
                   }}
                 >
                   {getButtonLabel("cancel")}
@@ -1459,7 +1656,16 @@ export function DirectorConfigForm() {
               />
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDirectorDefinedCharacters(
+                    directorDefinedCharacters.filter((_, i) => i !== index),
+                  );
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   setDirectorDefinedCharacters(
                     directorDefinedCharacters.filter((_, i) => i !== index),
                   );
@@ -1470,6 +1676,7 @@ export function DirectorConfigForm() {
                   color: visualTokens.bgColor,
                   minHeight: "44px",
                   minWidth: "44px",
+                  touchAction: "manipulation",
                 }}
               >
                 Remove
@@ -1478,7 +1685,17 @@ export function DirectorConfigForm() {
           ))}
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDirectorDefinedCharacters([
+                ...directorDefinedCharacters,
+                { name: "" },
+              ]);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
               setDirectorDefinedCharacters([
                 ...directorDefinedCharacters,
                 { name: "" },
@@ -1491,6 +1708,7 @@ export function DirectorConfigForm() {
               cursor: "pointer",
               minHeight: "44px",
               minWidth: "44px",
+              touchAction: "manipulation",
             }}
           >
             + Add Character

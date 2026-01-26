@@ -21,7 +21,6 @@ import { ConnectionStatus } from '@/src/components/ui/connection-status';
 import { CharacterCard } from '@/src/components/actor/character-card';
 import { ScriptPreviewModal } from './script-preview-modal';
 import { CharacterDossierModal } from './character-dossier-modal';
-import { ScriptExportButton } from '@/src/components/ui/script-export-button';
 import { CharacterAssignmentModal } from './character-assignment-modal';
 import { ConfirmationModal } from '@/src/components/ui/confirmation-modal';
 import {
@@ -976,7 +975,6 @@ export function CastingCouch({ onStartPerformance }: CastingCouchProps) {
                 >
                   Preview Script
                 </button>
-                <ScriptExportButton variant="secondary" />
               </>
             )}
 

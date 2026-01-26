@@ -8,6 +8,7 @@ interface VibeHeadingProps {
   sectionKey?: string;
   children?: ReactNode;
   className?: string;
+  color?: string;
 }
 
 export function VibeHeading({
@@ -15,6 +16,7 @@ export function VibeHeading({
   sectionKey,
   children,
   className = '',
+  color,
 }: VibeHeadingProps) {
   const { visualTokens, getSectionTitle } = useVibe();
 
@@ -29,7 +31,7 @@ export function VibeHeading({
     className,
     style: {
       fontFamily: visualTokens.headerFont,
-      color: visualTokens.textColor,
+      color: color ?? visualTokens.textColor,
     } as React.CSSProperties,
     children: text,
   };

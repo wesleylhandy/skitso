@@ -173,7 +173,7 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
     <dialog
       ref={dialogRef}
       onClick={handleBackdropClick}
-      className="w-full max-w-4xl max-h-[90vh] rounded-lg p-0 m-auto overflow-hidden"
+      className="w-[calc(100%-2rem)] sm:w-full max-w-4xl max-h-[90vh] rounded-lg p-0 m-auto overflow-hidden"
       style={{
         backgroundColor: visualTokens.bgColor,
         color: visualTokens.textColor,
@@ -191,12 +191,12 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
       <div className="flex flex-col h-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div
-          className="flex items-center justify-between p-6 border-b"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6 border-b"
           style={{ borderColor: visualTokens.primaryColor }}
         >
-          <div>
+          <div className="flex-1 min-w-0">
             <h2
-              className="text-2xl font-bold mb-1"
+              className="text-xl sm:text-2xl font-bold mb-1"
               style={{ color: visualTokens.primaryColor }}
             >
               {script.title}
@@ -212,10 +212,12 @@ export function ScriptPreviewModal({ isOpen, onClose }: ScriptPreviewModalProps)
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg font-semibold transition-opacity hover:opacity-90 cursor-pointer"
+            className="px-6 py-3 rounded-lg font-semibold transition-opacity hover:opacity-90 cursor-pointer flex-shrink-0 w-full sm:w-auto"
             style={{
               backgroundColor: visualTokens.primaryColor,
               color: visualTokens.bgColor,
+              minHeight: '44px',
+              minWidth: '44px',
             }}
             aria-label="Close preview"
           >

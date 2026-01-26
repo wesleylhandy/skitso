@@ -115,7 +115,16 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
         {canUseNativeShare && (
           <button
             type="button"
-            onClick={handleNativeShare}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleNativeShare();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleNativeShare();
+            }}
             style={{
               background: visualTokens.primaryColor,
               color: visualTokens.bgColor,
@@ -127,6 +136,7 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
               fontSize: '1rem',
               minWidth: '44px',
               minHeight: '44px',
+              touchAction: 'manipulation',
             }}
           >
             {getButtonLabel('share')}
@@ -134,7 +144,16 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
         )}
         <button
           type="button"
-          onClick={() => handleShare('twitter')}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('twitter');
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('twitter');
+          }}
           style={{
             background: visualTokens.primaryColor,
             color: visualTokens.bgColor,
@@ -146,6 +165,7 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
             fontSize: '1rem',
             minWidth: '44px',
             minHeight: '44px',
+            touchAction: 'manipulation',
           }}
         >
           {getButtonLabel('share')} on Twitter
@@ -153,7 +173,16 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
 
         <button
           type="button"
-          onClick={() => handleShare('instagram')}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('instagram');
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('instagram');
+          }}
           style={{
             background: visualTokens.primaryColor,
             color: visualTokens.bgColor,
@@ -165,6 +194,7 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
             fontSize: '1rem',
             minWidth: '44px',
             minHeight: '44px',
+            touchAction: 'manipulation',
           }}
         >
           {getButtonLabel('share')} on Instagram
@@ -172,7 +202,16 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
 
         <button
           type="button"
-          onClick={() => handleShare('tiktok')}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('tiktok');
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleShare('tiktok');
+          }}
           style={{
             background: visualTokens.primaryColor,
             color: visualTokens.bgColor,
@@ -184,6 +223,7 @@ export function SocialShare({ sessionCode: propSessionCode }: SocialShareProps) 
             fontSize: '1rem',
             minWidth: '44px',
             minHeight: '44px',
+            touchAction: 'manipulation',
           }}
         >
           {getButtonLabel('share')} on TikTok

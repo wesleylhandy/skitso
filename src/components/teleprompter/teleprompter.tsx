@@ -28,6 +28,7 @@ import {
   getConnectionStatus,
   onConnectionStatusChange,
   endPerformance,
+  updateSessionState,
 } from '@/src/lib/partykit/client';
 import type { ConnectionStatus } from '@/src/lib/partykit/client';
 import { ConnectionStatusBadge } from '@/src/components/ui/connection-status-badge';
@@ -36,6 +37,11 @@ interface TeleprompterProps {
   sessionCode: string;
   participantsCount?: number;
 }
+
+/** Extra px above/below a line when scrolled into view so the top/bottom are not cut off. */
+const SCROLL_LINE_BUFFER = 30;
+/** Offset from top of scroll viewport when positioning current line. Smaller = line appears higher. */
+const SCROLL_LINE_TOP_OFFSET = 30;
 
 /**
  * Teleprompter Component
@@ -52,6 +58,8 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
   const { visualTokens, getButtonLabel, getSectionTitle } = useVibe();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [readThroughBannerDismissed, setReadThroughBannerDismissed] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(getConnectionStatus());
@@ -135,108 +143,137 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
     };
   }, [sessionCode, setProgress]);
 
-  // Auto-scroll to current line - keep current action at top
+  // Measure header height (varies by viewport: wrap, optional banner, Director vs Actor layout)
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    const measure = () => setHeaderHeight(header.getBoundingClientRect().height);
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setHeaderHeight(entry.contentRect.height);
+    });
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [
+    participant?.role,
+    participantsCount,
+    readThroughBannerDismissed,
+    safeProgress?.startedAt,
+    hasExceededExpectedDuration,
+  ]);
+
+  // Auto-scroll to current line - keep current action below header with buffer.
+  // Always use explicit container.scrollTo so we only scroll the container (never the window).
+  // scrollIntoView scrolls the window too; lines 1–3 near the top end up under the header.
+  const initialScrollRetryRef = useRef(false);
+
   useEffect(() => {
     const currentIndex = currentLineIndex;
-    console.log('[Teleprompter] Scroll effect triggered for line index:', currentIndex);
-    
-    // Wait for DOM to update after state change, then find and scroll to current line
-    const scrollToCurrentLine = () => {
+
+    let scrollBehavior: ScrollBehavior = visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth';
+    try {
+      if (typeof window !== 'undefined') {
+        const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+        const reduced = !!(mq?.matches) || document.documentElement.getAttribute('data-reduced-motion') === 'reduce';
+        if (reduced) scrollBehavior = 'auto';
+      }
+    } catch {
+      /* use existing */
+    }
+    const behavior = scrollBehavior === 'smooth' ? 'smooth' : 'auto';
+
+    let retryId: ReturnType<typeof setTimeout> | undefined;
+
+    const scrollToLine = (container: HTMLElement, lineEl: HTMLElement) => {
+      if (typeof container.scrollTo !== 'function') return;
+      const cr = container.getBoundingClientRect();
+      const lr = lineEl.getBoundingClientRect();
+      const delta = lr.top - cr.top - SCROLL_LINE_TOP_OFFSET;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      const target = Math.max(0, Math.min(maxScroll, container.scrollTop + delta));
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[Teleprompter] scrollToLine', {
+          currentIndex,
+          scrollHeight: container.scrollHeight,
+          clientHeight: container.clientHeight,
+          scrollTop: container.scrollTop,
+          maxScroll,
+          delta,
+          target,
+          canScroll: maxScroll > 0,
+        });
+      }
+      container.scrollTo({ top: target, behavior: behavior as ScrollBehavior });
+    };
+
+    const runScroll = () => {
       const container = scrollContainerRef.current;
-      if (!container) {
-        console.warn('[Teleprompter] Scroll container not found');
+      if (!container) return;
+
+      if (currentIndex === 0) {
+        if (typeof container.scrollTo === 'function') {
+          if (process.env.NODE_ENV === 'development') {
+            const maxScroll = container.scrollHeight - container.clientHeight;
+            console.debug('[Teleprompter] scrollTo(0)', {
+              scrollHeight: container.scrollHeight,
+              clientHeight: container.clientHeight,
+              maxScroll,
+              canScroll: maxScroll > 0,
+            });
+          }
+          container.scrollTo({ top: 0, behavior: behavior as ScrollBehavior });
+        }
         return;
       }
 
-      // Try ref first (fastest), then fall back to data attribute lookup
-      let lineElement: HTMLElement | null = null;
-      
-      // Check if ref points to the correct line
-      if (currentLineRef.current) {
-        const refIndex = currentLineRef.current.getAttribute('data-line-index');
-        if (refIndex === String(currentIndex)) {
-          lineElement = currentLineRef.current;
+      let lineEl: HTMLElement | null = null;
+      if (currentLineRef.current?.getAttribute('data-line-index') === String(currentIndex)) {
+        lineEl = currentLineRef.current;
+      }
+      if (!lineEl) {
+        lineEl = container.querySelector(`[data-line-index="${currentIndex}"]`) as HTMLElement | null;
+      }
+
+      if (!lineEl) {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('[Teleprompter] line not found, retry in 50ms', { currentIndex });
         }
-      }
-      
-      // Fall back to querySelector if ref doesn't match or isn't set
-      if (!lineElement) {
-        lineElement = container.querySelector(
-          `[data-line-index="${currentIndex}"]`
-        ) as HTMLElement | null;
-      }
-      
-      if (!lineElement) {
-        console.warn(`[Teleprompter] Line element not found for index ${currentIndex}, retrying...`);
-        // Element not found yet, try again after a short delay
-        // This can happen if React hasn't finished rendering
-        setTimeout(() => {
-          const retryElement = container.querySelector(
-            `[data-line-index="${currentIndex}"]`
-          ) as HTMLElement | null;
-          if (retryElement) {
-            scrollElementToTop(container, retryElement);
-          } else {
-            console.error(`[Teleprompter] Line element still not found for index ${currentIndex} after retry`);
-          }
+        retryId = setTimeout(() => {
+          const retry = container.querySelector(`[data-line-index="${currentIndex}"]`) as HTMLElement | null;
+          if (retry) scrollToLine(container, retry);
         }, 50);
         return;
       }
 
-      scrollElementToTop(container, lineElement);
+      scrollToLine(container, lineEl);
     };
 
-    const scrollElementToTop = (container: HTMLElement, lineElement: HTMLElement) => {
-      // Determine scroll behavior
-      let scrollBehavior: ScrollBehavior = visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth';
+    requestAnimationFrame(() => requestAnimationFrame(runScroll));
 
-      // Respect reduced motion preferences
-      try {
-        if (typeof window !== 'undefined') {
-          const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-          const reducedFromOS = !!mediaQuery && mediaQuery.matches;
-          const reducedFromTheme =
-            typeof document !== 'undefined' &&
-            document.documentElement.getAttribute('data-reduced-motion') === 'reduce';
+    let t1: ReturnType<typeof setTimeout> | undefined;
+    let t2: ReturnType<typeof setTimeout> | undefined;
+    const needsRetries =
+      (currentIndex === 0 && !initialScrollRetryRef.current) || (currentIndex >= 1 && currentIndex <= 3);
+    if (currentIndex === 0 && !initialScrollRetryRef.current) {
+      initialScrollRetryRef.current = true;
+    }
+    if (needsRetries) {
+      t1 = setTimeout(runScroll, currentIndex === 0 ? 120 : 80);
+      t2 = setTimeout(runScroll, currentIndex === 0 ? 320 : 200);
+    }
 
-          if (reducedFromOS || reducedFromTheme) {
-            scrollBehavior = 'auto';
-          }
-        }
-      } catch {
-        // Fall back to existing behavior
-      }
-
-      // Use scrollIntoView - the simplest and most reliable method
-      // block: 'start' scrolls the element to the top of the scroll container
-      // This works even when the element is off-screen
-      const behavior = scrollBehavior === 'smooth' ? 'smooth' : 'auto';
-      
-      console.log('[Teleprompter] Calling scrollIntoView for line', {
-        currentIndex,
-        behavior,
-        containerScrollTop: container.scrollTop,
-      });
-      
-      lineElement.scrollIntoView({ 
-        block: 'start', 
-        inline: 'nearest',
-        behavior: behavior as ScrollBehavior
-      });
-
-      console.log('[Teleprompter] scrollIntoView completed', {
-        currentIndex,
-        containerScrollTop: container.scrollTop,
-      });
+    return () => {
+      if (retryId) clearTimeout(retryId);
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
     };
-
-      // Use double requestAnimationFrame to ensure:
-      // 1. React has finished rendering and DOM is updated
-      // 2. Browser has completed layout calculation
-      requestAnimationFrame(() => {
-        requestAnimationFrame(scrollToCurrentLine);
-      });
-    }, [currentLineIndex, visualTokens.animationStyle]);
+  }, [currentLineIndex, visualTokens.animationStyle, headerHeight]);
 
   // Handle start performance (Director only)
   const handleStart = useCallback(() => {
@@ -449,6 +486,29 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
     }
   }, [participant, storedSessionCode, sessionCode, router, setProgress, setSessionState]);
 
+  // Handle go back to casting couch
+  const handleGoBack = useCallback(() => {
+    if (!sessionCode || participant?.role !== 'director') return;
+    // Reset performance progress to first line
+    setProgress({
+      currentLineIndex: 0,
+      currentScene: 0,
+      startedAt: null,
+      pausedAt: null,
+      completedLines: [],
+      advancementControl: {
+        lastAdvancedBy: null,
+        lastAdvancedAt: null,
+        directorOverride: false,
+      },
+    });
+    // Update session state to 'casting' - this will redirect all participants back to casting couch
+    setSessionState('casting');
+    updateSessionState(sessionCode, 'casting');
+    // Redirect director to director-desk where casting couch will be shown
+    router.push('/director-desk');
+  }, [sessionCode, participant, router, setSessionState, setProgress]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -485,36 +545,37 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
   const isDirector = participant?.role === 'director';
   const hasStarted = safeProgress.startedAt !== null && safeProgress.startedAt !== undefined;
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--color-bg)' }}>
+    <div className="flex-1 min-h-0 flex flex-col" style={{ backgroundColor: visualTokens.bgColor }}>
       {/* Fixed Header with Controls (Director only) */}
       {isDirector && (
         <div
-          className="sticky top-0 z-10 border-b p-4"
+          ref={headerRef}
+          className="sticky top-0 z-10 border-b p-3 sm:p-4"
           style={{
-            backgroundColor: 'var(--color-bg)',
-            borderColor: 'var(--color-primary)',
+            backgroundColor: visualTokens.bgColor,
+            borderColor: visualTokens.primaryColor,
           }}
         >
-          <div className="flex items-center justify-between gap-4 mb-2">
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 mb-2">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold truncate" style={{ color: visualTokens.primaryColor }}>
                 {script.title}
               </h1>
-              <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
+              <p className="text-xs sm:text-sm opacity-75" style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}>
                 Scene {safeProgress.currentScene + 1} • Line {safeProgress.currentLineIndex + 1} of {scriptLines.length}
               </p>
               {hasExceededExpectedDuration && (
-                <p className="mt-1 text-xs opacity-80" style={{ color: 'var(--color-accent)' }}>
+                <p className="mt-1 text-xs opacity-80" style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}>
                   This performance has run longer than expected. It&apos;s okay to wrap whenever it feels right.
                 </p>
               )}
             </div>
             {/* Timing Indicator and connection status */}
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
               <div className="hidden sm:block">
                 <ConnectionStatusBadge variant="compact" />
               </div>
-              <div className="shrink-0 min-w-[200px]">
+              <div className="shrink-0 min-w-[120px] sm:min-w-[200px]">
                 <TimingIndicator
                   estimatedDuration={5} // Default 5 seconds per line (can be enhanced with script timing data)
                   isPaused={isPaused}
@@ -522,18 +583,31 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
               </div>
             </div>
           </div>
-          {/* Control Buttons */}
-          <div className="flex items-center justify-center gap-4 pt-2">
+          {/* Control Buttons - Responsive layout */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 pt-2">
             {!hasStarted ? (
               <button
-                onClick={handleStart}
-                className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleStart();
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleStart();
+                }}
+                className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
                 style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: 'var(--color-bg)',
+                  backgroundColor: visualTokens.primaryColor,
+                  color: visualTokens.bgColor,
                   borderRadius: visualTokens.borderRadius,
                   fontFamily: visualTokens.headerFont,
                   cursor: 'pointer',
+                  touchAction: 'manipulation',
+                  minWidth: '44px',
+                  minHeight: '44px',
                 }}
                 aria-label={getButtonLabel('start') || 'Start Performance'}
               >
@@ -544,13 +618,16 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
                 {isPaused ? (
                   <button
                     onClick={handleResume}
-                    className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                    className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
                     style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: 'var(--color-bg)',
+                      backgroundColor: visualTokens.primaryColor,
+                      color: visualTokens.bgColor,
                       borderRadius: visualTokens.borderRadius,
                       fontFamily: visualTokens.headerFont,
                       cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      minWidth: '44px',
+                      minHeight: '44px',
                     }}
                     aria-label={getButtonLabel('resume') || 'Resume'}
                   >
@@ -558,14 +635,27 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
                   </button>
                 ) : (
                   <button
-                    onClick={handlePause}
-                    className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handlePause();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handlePause();
+                    }}
+                    className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
                     style={{
-                      backgroundColor: 'var(--color-accent)',
-                      color: 'var(--color-bg)',
+                      backgroundColor: visualTokens.accentColor || visualTokens.primaryColor,
+                      color: visualTokens.bgColor,
                       borderRadius: visualTokens.borderRadius,
                       fontFamily: visualTokens.headerFont,
                       cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      minWidth: '44px',
+                      minHeight: '44px',
                     }}
                     aria-label={getButtonLabel('pause') || 'Pause'}
                   >
@@ -575,13 +665,16 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
                 <button
                   onClick={handleAdvance}
                   disabled={!canAdvance}
-                  className="px-6 py-3 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{
-                    backgroundColor: 'var(--color-primary)',
-                    color: 'var(--color-bg)',
+                    backgroundColor: visualTokens.primaryColor,
+                    color: visualTokens.bgColor,
                     borderRadius: visualTokens.borderRadius,
                     fontFamily: visualTokens.headerFont,
                     cursor: canAdvance ? 'pointer' : 'not-allowed',
+                    touchAction: 'manipulation',
+                    minWidth: '44px',
+                    minHeight: '44px',
                   }}
                   aria-label={getButtonLabel('advance') || 'Advance'}
                 >
@@ -589,20 +682,62 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
                 </button>
               </>
             )}
-            {/* Exit Button */}
+            {/* Go Back Button */}
             <button
-              onClick={() => setShowExitConfirm(true)}
-              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleGoBack();
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleGoBack();
+              }}
+              className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
               style={{
-                backgroundColor: 'var(--color-error, #ef4444)',
-                color: 'var(--color-bg)',
+                backgroundColor: 'transparent',
+                color: visualTokens.primaryColor,
+                border: `2px solid ${visualTokens.primaryColor}`,
                 borderRadius: visualTokens.borderRadius,
                 fontFamily: visualTokens.headerFont,
                 cursor: 'pointer',
+                touchAction: 'manipulation',
+                minWidth: '44px',
+                minHeight: '44px',
               }}
-              aria-label={getButtonLabel('exit') || 'Exit Performance'}
+              aria-label={getButtonLabel('goBack') || 'Go Back to Casting'}
             >
-              {getButtonLabel('exit') || 'Exit'}
+              {getButtonLabel('goBack') || 'Go Back'}
+            </button>
+            {/* End Scene Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowExitConfirm(true);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowExitConfirm(true);
+              }}
+              className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
+              style={{
+                backgroundColor: visualTokens.errorColor,
+                color: visualTokens.bgColor,
+                borderRadius: visualTokens.borderRadius,
+                fontFamily: visualTokens.headerFont,
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                minWidth: '44px',
+                minHeight: '44px',
+              }}
+              aria-label={getButtonLabel('endScene') || 'End Scene'}
+            >
+              {getButtonLabel('endScene') || 'End Scene'}
             </button>
           </div>
           {/* Read-through mode banner (solo director, screen-share) */}
@@ -610,8 +745,8 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
             <div
               className="mt-3 flex items-center justify-between gap-4 rounded-lg px-4 py-2"
               style={{
-                backgroundColor: 'var(--color-info)',
-                color: 'var(--color-bg)',
+                backgroundColor: visualTokens.infoColor || visualTokens.accentColor || visualTokens.primaryColor,
+                color: visualTokens.bgColor,
                 opacity: 0.9,
               }}
               role="status"
@@ -621,13 +756,23 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
               </p>
               <button
                 type="button"
-                onClick={() => setReadThroughBannerDismissed(true)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setReadThroughBannerDismissed(true);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setReadThroughBannerDismissed(true);
+                }}
                 className="shrink-0 rounded px-2 py-1 text-sm font-semibold transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2"
                 style={{
                   color: 'var(--color-bg)',
                   backgroundColor: 'transparent',
                   minHeight: '44px',
                   minWidth: '44px',
+                  touchAction: 'manipulation',
                 }}
                 aria-label="Dismiss read-through banner"
               >
@@ -641,23 +786,24 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
       {/* Sticky Header for Actors */}
       {!isDirector && (
         <div
-          className="sticky top-0 z-10 border-b p-4"
+          ref={headerRef}
+          className="sticky top-0 z-10 border-b p-3 sm:p-4"
           style={{
-            backgroundColor: 'var(--color-bg)',
-            borderColor: 'var(--color-primary)',
+            backgroundColor: visualTokens.bgColor,
+            borderColor: visualTokens.primaryColor,
           }}
         >
-          <div className="flex items-start justify-between gap-4 mb-2">
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 mb-2">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold truncate" style={{ color: visualTokens.primaryColor }}>
                 {script.title}
               </h1>
-              <p className="text-sm opacity-75" style={{ color: 'var(--color-accent)' }}>
+              <p className="text-xs sm:text-sm opacity-75" style={{ color: visualTokens.accentColor || visualTokens.primaryColor }}>
                 Scene {safeProgress.currentScene + 1} • Line {safeProgress.currentLineIndex + 1} of {scriptLines.length}
               </p>
             </div>
             {/* Timing Indicator */}
-            <div className="shrink-0 min-w-[200px]">
+            <div className="shrink-0 min-w-[120px] sm:min-w-[200px]">
               <TimingIndicator 
                 estimatedDuration={5}
                 isPaused={isPaused}
@@ -665,7 +811,7 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
             </div>
           </div>
           {/* Advancement Controls for Actors */}
-          <div className="flex items-center justify-center gap-4 pt-2">
+          <div className="flex items-center justify-center gap-2 sm:gap-4 pt-2">
             <AdvanceControl
               onAdvance={handleAdvance}
               onPause={undefined}
@@ -675,14 +821,27 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
             />
             {/* Exit Button for Actors */}
             <button
-              onClick={() => setShowExitConfirm(true)}
-              className="px-6 py-3 font-semibold transition-colors cursor-pointer"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowExitConfirm(true);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowExitConfirm(true);
+              }}
+              className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold transition-colors cursor-pointer"
               style={{
-                backgroundColor: 'var(--color-error, #ef4444)',
-                color: 'var(--color-bg)',
+                backgroundColor: visualTokens.errorColor,
+                color: visualTokens.bgColor,
                 borderRadius: visualTokens.borderRadius,
                 fontFamily: visualTokens.headerFont,
                 cursor: 'pointer',
+                touchAction: 'manipulation',
+                minWidth: '44px',
+                minHeight: '44px',
               }}
               aria-label={getButtonLabel('exit') || 'Exit Performance'}
             >
@@ -695,9 +854,12 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
       {/* Script Display */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto p-8 ${isDirector ? '' : ''}`}
+        className={`flex-1 min-h-0 overflow-y-auto px-8 pb-8 ${isDirector ? '' : ''}`}
         style={{
           scrollBehavior: visualTokens.animationStyle === 'snappy' ? 'auto' : 'smooth',
+          paddingTop: (headerHeight > 0 ? headerHeight : 32) + SCROLL_LINE_BUFFER,
+          scrollPaddingTop: (headerHeight > 0 ? headerHeight : 32) + SCROLL_LINE_BUFFER,
+          scrollPaddingBottom: SCROLL_LINE_BUFFER,
         }}
       >
         <div className="max-w-4xl mx-auto space-y-4">
@@ -746,6 +908,10 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
                   borderWidth: (isCurrent || shouldHighlightMyLine) ? '2px' : '0',
                   borderStyle: 'solid',
                   opacity: shouldHighlightMyLine && !isCompleted ? 1 : isCompleted ? 0.5 : undefined,
+                  ...(isCurrent && {
+                    scrollMarginTop: (headerHeight > 0 ? headerHeight : 32) + SCROLL_LINE_BUFFER,
+                    scrollMarginBottom: SCROLL_LINE_BUFFER,
+                  }),
                 }}
               >
                 {/* Visual timing cue - pulsing indicator for current line */}
@@ -819,10 +985,10 @@ export function Teleprompter({ sessionCode, participantsCount }: TeleprompterPro
         isOpen={showExitConfirm}
         onClose={() => setShowExitConfirm(false)}
         onConfirm={handleExit}
-        title="Exit Performance?"
-        message="Are you sure you want to exit the performance? This will stop the script and return you to the previous screen."
-        confirmLabel="Exit"
-        cancelLabel="Cancel"
+        title={getSectionTitle('endSceneConfirm') || 'End Scene?'}
+        message={getSectionTitle('endSceneConfirmMessage') || 'This will end the performance and move everyone to the wrap party.'}
+        confirmLabel={getButtonLabel('endScene') || 'End Scene'}
+        cancelLabel={getButtonLabel('cancel') || 'Cancel'}
         variant="danger"
       />
     </div>
