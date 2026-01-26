@@ -108,6 +108,16 @@ export default function StagePage({ params }: StagePageProps) {
       if (data.sessionId !== sessionCode || !mounted) return;
       if (data.status) {
         setSessionState(data.status);
+        // If state changes to 'casting', redirect participants back to casting couch
+        if (data.status === 'casting') {
+          if (participant?.role !== 'director') {
+            // Participants redirect to join page where casting couch will be shown
+            router.push(`/join/${sessionCode}`);
+          } else {
+            // Director redirects to director-desk
+            router.push('/director-desk');
+          }
+        }
       }
       if (data.vibeContext) {
         setVibe(data.vibeContext as never);
@@ -125,7 +135,7 @@ export default function StagePage({ params }: StagePageProps) {
       client.removeEventListener('message', handleStateRecovered);
       unsubscribeState();
     };
-  }, [sessionCode, setSessionState, setVibe]);
+  }, [sessionCode, setSessionState, setVibe, router, participant]);
 
   // Fetch participant count when performing (e.g. director navigated from casting without state:recovered)
   useEffect(() => {
@@ -188,14 +198,16 @@ export default function StagePage({ params }: StagePageProps) {
 
   return (
     <div
-      className="min-h-screen w-full"
+      className="h-screen overflow-hidden w-full flex flex-col"
       style={{
         backgroundColor: visualTokens.bgColor,
         color: visualTokens.textColor,
         fontFamily: visualTokens.bodyFont,
       }}
     >
-      <Teleprompter sessionCode={sessionCode} participantsCount={participantsCount ?? undefined} />
+      <div className="flex-1 min-h-0 flex flex-col">
+        <Teleprompter sessionCode={sessionCode} participantsCount={participantsCount ?? undefined} />
+      </div>
     </div>
   );
 }

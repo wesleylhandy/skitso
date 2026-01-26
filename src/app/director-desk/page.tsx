@@ -417,7 +417,7 @@ export default function DirectorDeskPage() {
         generationProgress={generationProgress}
         isGenerating={isGenerating}
       />
-      <main className="min-h-screen p-8 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg)' }}>
+      <main className="min-h-screen p-4 sm:p-6 lg:p-8 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg)' }}>
         <div className="max-w-4xl mx-auto">
           <div
             style={{
@@ -437,9 +437,9 @@ export default function DirectorDeskPage() {
         </VibePanel>
         
         {/* Session Code - Show in main content when NOT generating (sticky header shows it during generation) */}
-        {!isGenerating && sessionCode && (
+        {sessionCode && (
           <div className="mb-8">
-            <SessionShare />
+            <SessionShare disabled={isGenerating} />
           </div>
         )}
         

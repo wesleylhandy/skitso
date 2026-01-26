@@ -53,10 +53,22 @@ export function ImageDownloadButton({ imageUrl, filename, className = '' }: Imag
   return (
     <button
       type="button"
-      onClick={handleDownload}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDownload();
+      }}
+      onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDownload();
+      }}
       className={`absolute top-2 right-2 p-2 rounded-full bg-black bg-opacity-60 hover:bg-opacity-80 text-white transition-opacity duration-200 z-10 opacity-0 group-hover:opacity-100 pointer-events-auto cursor-pointer ${className}`}
       style={{
         backdropFilter: 'blur(4px)',
+        touchAction: 'manipulation',
+        minWidth: '44px',
+        minHeight: '44px',
       }}
       aria-label={`Download ${filename}`}
       title={`Download ${filename}`}

@@ -287,18 +287,30 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
     );
   }
 
+  const sectionColor = { color: visualTokens.primaryColor };
+
   return (
-    <div className="voting-interface" style={{ color: visualTokens.primaryColor }}>
-      <h2 style={{ fontFamily: visualTokens.headerFont, marginBottom: '2rem' }}>
+    <div className="voting-interface" style={sectionColor}>
+      <h2 style={{ fontFamily: visualTokens.headerFont, marginBottom: '2rem', color: visualTokens.textColor }}>
         {getSectionTitle('wrapParty')}
       </h2>
 
       {/* Overall Quality Voting */}
-      <section className="voting-section" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+      <section className="voting-section" style={{ marginBottom: '2rem', ...sectionColor }}>
+        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem', color: visualTokens.accentColor }}>
           Overall Quality
         </h3>
-        <div className="star-rating" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div
+          className="star-rating"
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: '2px',
+          }}
+        >
           {[1, 2, 3, 4, 5].map((star) => {
             const isSelected = Boolean(selectedQuality && selectedQuality >= star);
             return (
@@ -307,18 +319,32 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
                 type="button"
                 aria-label={`${star} star${star !== 1 ? 's' : ''}${isSelected ? ' — your rating' : ''}`}
                 aria-pressed={isSelected}
-                onClick={() => handleVote('overall_quality', 'overall', star)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('overall_quality', 'overall', star);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('overall_quality', 'overall', star);
+                }}
                 style={{
                   background: isSelected ? visualTokens.primaryColor : 'transparent',
                   border: `2px solid ${isSelected ? visualTokens.primaryColor : visualTokens.accentColor}`,
                   color: isSelected ? visualTokens.bgColor : visualTokens.accentColor,
-                  padding: '0.5rem 1rem',
+                  padding: 0,
+                  width: '44px',
+                  height: '44px',
+                  flexShrink: 0,
                   borderRadius: visualTokens.borderRadius,
                   cursor: 'pointer',
-                  fontSize: '1.5rem',
-                  minWidth: '44px',
-                  minHeight: '44px',
+                  fontSize: '1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   opacity: isSelected ? 1 : 0.85,
+                  touchAction: 'manipulation',
                 }}
               >
                 {isSelected ? '★' : '☆'}
@@ -327,15 +353,15 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
           })}
         </div>
         {qualityResults.count > 0 && (
-          <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+          <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', ...sectionColor }}>
             Average: {qualityResults.average.toFixed(1)} ({qualityResults.count} votes)
           </p>
         )}
       </section>
 
       {/* Best Actor Voting */}
-      <section className="voting-section" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+      <section className="voting-section" style={{ marginBottom: '2rem', ...sectionColor }}>
+        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem', color: visualTokens.accentColor }}>
           Best Actor
         </h3>
         <div className="character-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
@@ -345,7 +371,16 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
               <button
                 key={character.id}
                 type="button"
-                onClick={() => handleVote('best_actor', character.id, 1)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('best_actor', character.id, 1);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('best_actor', character.id, 1);
+                }}
                 style={{
                   background: selectedBestActor === character.id ? visualTokens.primaryColor : 'transparent',
                   border: `2px solid ${visualTokens.primaryColor}`,
@@ -358,6 +393,7 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.35rem',
+                  touchAction: 'manipulation',
                 }}
               >
                 {isTop && (
@@ -378,8 +414,8 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
       </section>
 
       {/* Favorite Moment Voting */}
-      <section className="voting-section" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+      <section className="voting-section" style={{ marginBottom: '2rem', ...sectionColor }}>
+        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem', color: visualTokens.accentColor }}>
           Favorite Moment
         </h3>
         <div className="moment-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
@@ -389,7 +425,16 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
               <button
                 key={moment}
                 type="button"
-                onClick={() => handleVote('favorite_moment', moment, 1)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('favorite_moment', moment, 1);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('favorite_moment', moment, 1);
+                }}
                 style={{
                   background: selectedFavoriteMoment === moment ? visualTokens.primaryColor : 'transparent',
                   border: `2px solid ${visualTokens.primaryColor}`,
@@ -403,6 +448,7 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.35rem',
+                  touchAction: 'manipulation',
                 }}
               >
                 {isTop && (
@@ -423,8 +469,8 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
       </section>
 
       {/* Funniest Moment Voting */}
-      <section className="voting-section" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem' }}>
+      <section className="voting-section" style={{ marginBottom: '2rem', ...sectionColor }}>
+        <h3 style={{ fontFamily: visualTokens.headerFont, marginBottom: '1rem', color: visualTokens.accentColor }}>
           Funniest Moment
         </h3>
         <div className="moment-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
@@ -434,7 +480,16 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
               <button
                 key={moment}
                 type="button"
-                onClick={() => handleVote('funniest_moment', moment, 1)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('funniest_moment', moment, 1);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVote('funniest_moment', moment, 1);
+                }}
                 style={{
                   background: selectedFunniestMoment === moment ? visualTokens.primaryColor : 'transparent',
                   border: `2px solid ${visualTokens.primaryColor}`,
@@ -448,6 +503,7 @@ export function VotingInterface({ onVoteSubmitted, sessionCode: propSessionCode 
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.35rem',
+                  touchAction: 'manipulation',
                 }}
               >
                 {isTop && (

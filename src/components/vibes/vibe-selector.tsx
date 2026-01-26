@@ -19,12 +19,14 @@ import { clearSessionState } from '@/src/lib/utils/session-state-cleanup';
 import { VibeCard } from './vibe-card';
 import type { VibeType } from '@/src/state/types/vibe';
 
+// Ordered by generational progression (youngest to oldest):
+// Creates a natural cultural timeline from Gen Alpha to Boomer
 const ALL_VIBES: VibeType[] = [
-  'VIRAL_NEON',
-  'INDIE_A24',
-  'SITCOM_STUDIO',
-  'BRAINROT_THEATER',
-  'QUIET_STUDIO',
+  'BRAINROT_THEATER', // Gen Alpha - chaotic, meme-driven
+  'VIRAL_NEON',       // Gen Z - digital native, neon aesthetic
+  'INDIE_A24',        // Millennial - art house, introspective
+  'SITCOM_STUDIO',    // Gen X - classic sitcom format
+  'QUIET_STUDIO',     // Boomer - traditional, minimalist
 ];
 
 export function VibeSelector() {
@@ -102,8 +104,8 @@ export function VibeSelector() {
           display: 'flex',
           flexWrap: 'wrap',
           justifyContent: 'center',
-          gap: '2rem',
-          padding: '2rem',
+          gap: 'clamp(1rem, 3vw, 2rem)',
+          padding: 'clamp(1rem, 3vw, 2rem)',
           maxWidth: '1200px',
           margin: '0 auto',
           // Add cross-dissolve transition container

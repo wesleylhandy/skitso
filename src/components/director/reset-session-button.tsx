@@ -106,7 +106,16 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
     <>
       <button
         type="button"
-        onClick={handleResetClick}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleResetClick();
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleResetClick();
+        }}
         className={`px-4 py-2 rounded font-medium ${variant === 'secondary' ? 'border' : ''} ${className}`}
         style={{
           ...style,
@@ -114,6 +123,7 @@ export function ResetSessionButton({ variant = 'secondary', className = '' }: Re
           cursor: 'pointer',
           minHeight: '44px',
           minWidth: '44px',
+          touchAction: 'manipulation',
         }}
       >
         Start New Session

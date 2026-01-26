@@ -41,7 +41,18 @@ export function ScriptExportButton({ className = '', label, variant = 'secondary
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={(e) => {
+        if (disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
+      onTouchEnd={(e) => {
+        if (disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
       disabled={disabled}
       className={className}
       style={{
@@ -57,6 +68,7 @@ export function ScriptExportButton({ className = '', label, variant = 'secondary
         alignItems: 'center',
         justifyContent: 'center',
         gap: '0.5rem',
+        touchAction: 'manipulation',
       }}
       aria-label={label ?? getButtonLabel('exportScript')}
       title={label ?? getButtonLabel('exportScript')}

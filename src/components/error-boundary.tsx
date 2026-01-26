@@ -77,11 +77,23 @@ export class AppErrorBoundary extends Component<
             />
             <button
               type="button"
-              onClick={this.handleReset}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleReset();
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleReset();
+              }}
               className="px-4 py-2 font-semibold rounded"
               style={{
                 backgroundColor: 'var(--color-primary)',
                 color: 'var(--color-bg)',
+                touchAction: 'manipulation',
+                minWidth: '44px',
+                minHeight: '44px',
               }}
             >
               Reload Skitso

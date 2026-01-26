@@ -1,4 +1,4 @@
-# Character Generation Prompt Template
+git # Character Generation Prompt Template
 
 **Endpoint:** `/api/openai/characters`  
 **Model:** gpt-5-mini  

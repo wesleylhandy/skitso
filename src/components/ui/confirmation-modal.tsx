@@ -76,7 +76,7 @@ export function ConfirmationModal({
     };
   }, [onClose]);
 
-  // Handle backdrop click
+  // Handle backdrop click (mouse only - touch handled separately to avoid interference)
   const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -88,7 +88,9 @@ export function ConfirmationModal({
   };
 
   // Handle confirm
-  const handleConfirm = () => {
+  const handleConfirm = (e?: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     onConfirm();
     onClose();
   };
@@ -141,9 +143,14 @@ export function ConfirmationModal({
         transform: 'translate(-50%, -50%)',
         margin: 0,
         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+        touchAction: 'manipulation',
       }}
     >
-      <div className="flex flex-col">
+      <div 
+        className="flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-6 border-b" style={{ borderColor: visualTokens.primaryColor }}>
           <h2
@@ -177,7 +184,16 @@ export function ConfirmationModal({
         >
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             className="px-4 py-2 rounded font-semibold transition-opacity hover:opacity-90"
             style={{
               borderColor: visualTokens.primaryColor,
@@ -186,6 +202,9 @@ export function ConfirmationModal({
               borderWidth: '1px',
               borderStyle: 'solid',
               fontFamily: visualTokens.headerFont,
+              touchAction: 'manipulation',
+              minWidth: '44px',
+              minHeight: '44px',
             }}
           >
             {cancelLabel}
@@ -193,10 +212,14 @@ export function ConfirmationModal({
           <button
             type="button"
             onClick={handleConfirm}
+            onTouchEnd={handleConfirm}
             className="px-4 py-2 rounded font-semibold transition-opacity hover:opacity-90"
             style={{
               ...confirmButtonStyle,
               fontFamily: visualTokens.headerFont,
+              touchAction: 'manipulation',
+              minWidth: '44px',
+              minHeight: '44px',
             }}
           >
             {confirmLabel}

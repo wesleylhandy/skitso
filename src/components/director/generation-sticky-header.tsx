@@ -42,7 +42,7 @@ export function GenerationStickyHeader({
   const canUseNativeShare = typeof navigator !== 'undefined' && 'share' in navigator;
 
   const handleNativeShare = async () => {
-    if (!canUseNativeShare || !shareableLink) return;
+    if (!canUseNativeShare || !shareableLink || isGenerating) return;
 
     try {
       await navigator.share({
@@ -61,7 +61,7 @@ export function GenerationStickyHeader({
   };
 
   const handleCopy = async () => {
-    if (!shareableLink) return;
+    if (!shareableLink || isGenerating) return;
     try {
       await navigator.clipboard.writeText(shareableLink);
       setCopied(true);
@@ -159,31 +159,57 @@ export function GenerationStickyHeader({
                 />
                 {canUseNativeShare ? (
                   <button
-                    onClick={handleNativeShare}
-                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded font-medium transition-opacity hover:opacity-90 text-sm"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleNativeShare();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleNativeShare();
+                    }}
+                    disabled={isGenerating}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded font-medium transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     style={{
                       backgroundColor: 'var(--color-primary)',
                       color: 'var(--color-bg)',
-                      cursor: 'pointer',
+                      cursor: isGenerating ? 'not-allowed' : 'pointer',
                       minHeight: '44px',
                       minWidth: '44px',
+                      touchAction: 'manipulation',
                     }}
                     aria-label="Share session"
+                    title={isGenerating ? 'Please wait for generation to complete before sharing' : 'Share session link'}
                   >
                     {getButtonLabel('share')}
                   </button>
                 ) : (
                   <button
-                    onClick={handleCopy}
-                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded font-medium transition-opacity hover:opacity-90 text-sm"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCopy();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCopy();
+                    }}
+                    disabled={isGenerating}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded font-medium transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     style={{
                       backgroundColor: 'var(--color-primary)',
                       color: 'var(--color-bg)',
-                      cursor: 'pointer',
+                      cursor: isGenerating ? 'not-allowed' : 'pointer',
                       minHeight: '44px',
                       minWidth: '44px',
+                      touchAction: 'manipulation',
                     }}
                     aria-label="Copy shareable link"
+                    title={isGenerating ? 'Please wait for generation to complete before sharing' : 'Copy shareable link'}
                   >
                     {copied ? 'Copied!' : getButtonLabel('share')}
                   </button>

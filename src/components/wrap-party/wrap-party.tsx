@@ -90,6 +90,15 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
       if (data.status === 'completed') {
         setSessionState('completed');
       }
+      if (data.status === 'casting') {
+        // Director clicked "Go Back" - redirect all participants to casting couch
+        setSessionState('casting');
+        if (!isDirector) {
+          // Participants redirect to join page where casting couch will be shown
+          router.push(`/join/${sessionCode}`);
+        }
+        return;
+      }
       if (data.status === 'expired') {
         disconnectPartyKit();
         setSessionCode(null);
@@ -134,6 +143,7 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
     setScript,
     setParticipant,
     setPerformanceProgress,
+    isDirector,
   ]);
 
   const stateRecoveryAttemptedRef = useRef(false);
@@ -355,6 +365,29 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
     // Redirect happens when we receive session:state:updated { status: 'expired' }
   };
 
+  const handleGoBack = () => {
+    if (!sessionCode || !isDirector) return;
+    // Reset performance progress and wrap party votes for the new run
+    setPerformanceProgress({
+      currentLineIndex: 0,
+      currentScene: 0,
+      startedAt: null,
+      pausedAt: null,
+      completedLines: [],
+      advancementControl: {
+        lastAdvancedBy: null,
+        lastAdvancedAt: null,
+        directorOverride: false,
+      },
+    });
+    setWrapPartyData(null);
+    // Update session state to 'casting' - this will redirect all participants back to casting couch
+    setSessionState('casting');
+    updateSessionState(sessionCode, 'casting');
+    // Redirect director to director-desk where casting couch will be shown
+    router.push('/director-desk');
+  };
+
   return (
     <div 
       className="wrap-party"
@@ -372,6 +405,7 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
               level={1}
               sectionKey="wrapParty"
               className="text-4xl md:text-5xl font-bold"
+              color={visualTokens.accentColor}
             />
             <p style={{ fontFamily: visualTokens.bodyFont, fontSize: '1.2rem' }}>
               {getSectionTitle('wrapPartySubtitle')}
@@ -390,40 +424,77 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
             <button
               type="button"
               onClick={() => setShowDoAnotherConfirm(true)}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowDoAnotherConfirm(true);
+              }}
               style={{
                 fontFamily: visualTokens.bodyFont,
                 padding: '0.5rem 1rem',
                 borderRadius: visualTokens.borderRadius,
-                border: `2px solid ${visualTokens.primaryColor}`,
-                color: visualTokens.primaryColor,
-                background: 'transparent',
+                border: 'none',
+                color: visualTokens.bgColor,
+                background: visualTokens.primaryColor,
                 cursor: 'pointer',
                 minWidth: '44px',
                 minHeight: '44px',
+                touchAction: 'manipulation',
               }}
-              aria-label={getButtonLabel('doAnother')}
+              aria-label={getButtonLabel('switchVibe')}
             >
-              {getButtonLabel('doAnother')}
+              {getButtonLabel('switchVibe')}
             </button>
             {isDirector && (
-              <button
-                type="button"
-                onClick={() => setShowExitConfirm(true)}
-                style={{
-                  fontFamily: visualTokens.bodyFont,
-                  padding: '0.5rem 1rem',
-                  borderRadius: visualTokens.borderRadius,
-                  border: 'none',
-                  color: visualTokens.bgColor,
-                  background: visualTokens.errorColor,
-                  cursor: 'pointer',
-                  minWidth: '44px',
-                  minHeight: '44px',
-                }}
-                aria-label={getButtonLabel('wrapPartyExit')}
-              >
-                {getButtonLabel('wrapPartyExit')}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleGoBack}
+                  style={{
+                    fontFamily: visualTokens.bodyFont,
+                    padding: '0.5rem 1rem',
+                    borderRadius: visualTokens.borderRadius,
+                    border: `2px solid ${visualTokens.accentColor}`,
+                    color: visualTokens.accentColor,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    touchAction: 'manipulation',
+                  }}
+                  aria-label={getButtonLabel('goBack') || 'Go Back to Casting'}
+                >
+                  {getButtonLabel('goBack') || 'Go Back to Casting'}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowExitConfirm(true);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowExitConfirm(true);
+                  }}
+                  style={{
+                    fontFamily: visualTokens.bodyFont,
+                    padding: '0.5rem 1rem',
+                    borderRadius: visualTokens.borderRadius,
+                    border: 'none',
+                    color: visualTokens.bgColor,
+                    background: visualTokens.errorColor,
+                    cursor: 'pointer',
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    touchAction: 'manipulation',
+                  }}
+                  aria-label={getButtonLabel('wrapPartyExit')}
+                >
+                  {getButtonLabel('wrapPartyExit')}
+                </button>
+              </>
             )}
           </div>
         </header>
@@ -432,9 +503,9 @@ export function WrapParty({ sessionCode: propSessionCode }: WrapPartyProps) {
           isOpen={showDoAnotherConfirm}
           onClose={() => setShowDoAnotherConfirm(false)}
           onConfirm={handleDoAnother}
-          title={getSectionTitle('wrapPartyDoAnotherConfirm')}
+          title={getSectionTitle('wrapPartySwitchVibeConfirm')}
           message="You'll return to the director form (or join page) with the same session. Configure again and generate a new script."
-          confirmLabel={getButtonLabel('doAnother')}
+          confirmLabel={getButtonLabel('switchVibe')}
           cancelLabel={getButtonLabel('cancel')}
           variant="default"
         />
